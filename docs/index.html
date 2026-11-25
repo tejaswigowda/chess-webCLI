@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<!-- connect-src: the page origin; wss: for the introduction relays (rooms only); the two model hosts, used
+     only after you press "Load model". Nothing else can be reached from this page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self' wss: ws://localhost:* ws://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com; img-src 'self' data: blob:; manifest-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
+<title>chess-webCLI</title>
+<meta name="description" content="Chess rooms you open with a link, directly between browsers, plus a bounded on-device AI. No account and no game server.">
+<meta name="theme-color" content="#0d0f1a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="chess">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  /* the Web-CLI family palette (shared with rtc-webCLI, blog-webCLI and ffmpeg-webCLI) */
+  :root { color-scheme:dark; --bg:#0d0f1a; --panel:#151827; --surface2:#1e2236; --surface3:#252a42; --line:#2e3350; --rule:#5b515f; --fg:#e2e8f0; --dim:#94a3b8; --ok:#70db97; --warn:#f59e0b; --bad:#ef4444; --acc:#3665b6; --acc-h:#81e2f8; --link:#81e2f8; --code:#080a10;
+    --light:#c9d3e6; --dark:#5d6f99; --hl:rgba(129,226,248,.42); --sel:rgba(112,219,151,.55); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; height:100dvh; display:flex; flex-direction:column; background:var(--bg); color:var(--fg); font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  button, input, select { font:inherit; color:inherit; }
+  button { background:var(--surface2); border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--acc); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--acc); border-color:var(--acc); }
+  button.danger { background:#b91c1c; border-color:#b91c1c; }
+  button.on { background:#1f7a46; border-color:#1f7a46; }
+  input[type=text], input[type=password], select, textarea { background:var(--code); border:1px solid var(--line); border-radius:6px; padding:6px 8px; width:100%; }
+  textarea { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; resize:vertical; }
+  a { color:var(--link); }
+  code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .hidden { display:none !important; }
+  .dim { color:var(--dim); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px; }
+  .banner { border-radius:8px; padding:10px 12px; margin:10px 0; border:1px solid var(--line); }
+  .banner.bad { border-color:var(--bad); background:rgba(239,68,68,.1); }
+  .banner.warn { border-color:var(--warn); background:rgba(245,158,11,.1); }
+  .banner.info { border-color:var(--acc); background:rgba(54,101,182,.14); }
+  .banner.ok { border-color:var(--ok); background:rgba(112,219,151,.1); }
+  ul.plain { margin:6px 0; padding-left:18px; }
+  .chip { display:inline-block; padding:0 7px; border-radius:10px; font-size:11px; border:1px solid var(--line); margin:2px 4px 0 0; white-space:nowrap; }
+  .chip.ok { border-color:var(--ok); color:var(--ok); }
+  .chip.warn { border-color:var(--warn); color:var(--warn); }
+  .chip.bad { border-color:var(--bad); color:var(--bad); }
+  .chip.acc { border-color:var(--acc-h); color:var(--acc-h); }
+
+  /* ---- header, shared look with the other webCLIs ---- */
+  #top { position:sticky; top:0; z-index:30; display:flex; gap:.6rem 1rem; align-items:center; flex-wrap:wrap; background:var(--panel); border-bottom:1px solid var(--rule); padding:.7rem 1.25rem; flex:none; }
+  #top .brand { display:flex; align-items:center; gap:.6rem; font-size:1.15rem; font-weight:700; letter-spacing:-.02em; text-decoration:none; color:var(--fg); }
+  #top .brand::before { content:""; width:26px; height:26px; background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 21h10'/%3E%3Cpath d='M8 21v-2.5c0-1.2 1-2 1.6-3L12 12l-3.5.8c-1 .2-2-.3-2.3-1.3L5.6 10c-.2-.6 0-1.2.5-1.6L11 4.5 10.5 3h2c3.7 0 6.5 3.3 6.5 7.5V21'/%3E%3Ccircle cx='12.5' cy='7' r='.6' fill='%236366f1'/%3E%3C/svg%3E") center/contain no-repeat; }
+  .pill { font-size:.7rem; padding:2px 9px; border-radius:20px; background:rgba(99,102,241,.18); color:#818cf8; font-weight:600; white-space:nowrap; }
+  .badge-local { font-size:.7rem; padding:2px 9px; border-radius:20px; background:rgba(34,197,94,.15); color:var(--ok); font-weight:600; white-space:nowrap; }
+  #hdrRoom { display:flex; gap:.5rem; align-items:center; margin-left:auto; min-width:0; }
+  #roomInfo { color:var(--dim); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:28rem; }
+  .help-nav { display:flex; gap:.4rem; align-items:center; }
+  #hdrRoom:empty + .help-nav, #hdrRoom.hidden + .help-nav { margin-left:auto; }
+  .header-icon { display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; color:var(--dim); text-decoration:none; padding:0; border-radius:7px; border:1px solid var(--rule); background:var(--surface2); cursor:pointer; transition:color .15s,border-color .15s,background .15s; }
+  .header-icon:hover:not(:disabled) { color:var(--fg); border-color:var(--acc); background:var(--surface3); }
+  .header-icon.gh::before { content:""; width:16px; height:16px; background:currentColor; -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.341-3.369-1.341-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.337-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z'/%3E%3C/svg%3E") center/contain no-repeat; mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.341-3.369-1.341-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.337-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z'/%3E%3C/svg%3E") center/contain no-repeat; }
+  svg.i { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+  .cbtn { display:inline-flex; align-items:center; gap:6px; position:relative; }
+
+  /* ---- landing ---- */
+  #landing { max-width:720px; width:100%; margin:0 auto; padding:32px 16px 64px; flex:1; overflow:auto; }
+  #landing h1 { margin:0 0 4px; font-size:26px; }
+  #landing .sub { margin:0 0 20px; color:var(--dim); }
+  #landing .card { margin-bottom:16px; }
+  #landing h2 { margin:0 0 4px; font-size:16px; }
+  #landing label { display:block; margin:10px 0 4px; color:var(--dim); font-size:12px; }
+  #landing .row { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:12px; }
+  #landing .row > div { flex:1 1 140px; }
+  #landing .row > button { min-height:40px; }
+  #landing details { margin-top:12px; }
+  #landing summary { cursor:pointer; color:var(--dim); }
+  .chk { display:block; margin:6px 0; }
+
+  /* ---- game ---- */
+  #game { display:grid; grid-template-columns:minmax(0,1fr) 380px; flex:1; min-height:0; }
+  #stage { overflow:auto; padding:12px 16px; display:flex; flex-direction:column; align-items:center; gap:8px; min-height:0; }
+  #boardCol { width:min(100%, calc(100dvh - 330px), 680px); min-width:260px; display:flex; flex-direction:column; gap:6px; }
+  .pbar { display:flex; align-items:center; gap:10px; min-height:34px; }
+  .pbar .who { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pbar .who .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--dim); margin-right:6px; vertical-align:1px; }
+  .pbar .who .dot.on { background:var(--ok); }
+  .pbar .caps { color:var(--dim); font-size:15px; letter-spacing:-2px; flex:1; overflow:hidden; white-space:nowrap; }
+  .pbar .caps b { letter-spacing:0; font-size:12px; margin-left:6px; color:var(--dim); font-weight:500; }
+  .clock { font:600 20px/1 ui-monospace,SFMono-Regular,Menlo,monospace; padding:6px 10px; border-radius:6px; background:var(--surface2); border:1px solid var(--line); min-width:92px; text-align:right; }
+  .clock.run { background:#e2e8f0; color:#0d0f1a; }
+  .clock.low { background:#b91c1c; color:#fff; border-color:#b91c1c; }
+  #board { position:relative; width:100%; aspect-ratio:1; display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr); border-radius:6px; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; box-shadow:0 6px 24px rgba(0,0,0,.45); }
+  .sq { position:relative; display:flex; align-items:center; justify-content:center; container-type:size; }
+  .sq.l { background:var(--light); } .sq.d { background:var(--dark); }
+  .sq.last::before { content:""; position:absolute; inset:0; background:var(--hl); }
+  .sq.sel::before { content:""; position:absolute; inset:0; background:var(--sel); }
+  .sq.hint::before { content:""; position:absolute; inset:0; background:rgba(245,158,11,.5); }
+  .sq.check::after { content:""; position:absolute; inset:0; background:radial-gradient(circle, rgba(239,68,68,.95) 0%, rgba(239,68,68,.5) 35%, transparent 70%); }
+  .sq .dotm { position:absolute; width:30%; height:30%; border-radius:50%; background:rgba(13,15,26,.35); z-index:2; pointer-events:none; }
+  .sq .ring { position:absolute; inset:4%; border-radius:50%; border:5px solid rgba(13,15,26,.35); z-index:2; pointer-events:none; }
+  .sq .coord { position:absolute; font-size:10px; font-weight:700; pointer-events:none; z-index:1; }
+  .sq .coord.f { right:3px; bottom:1px; } .sq .coord.r { left:3px; top:1px; }
+  .sq.l .coord { color:var(--dark); } .sq.d .coord { color:var(--light); }
+  .pc { position:relative; z-index:3; font-size:82cqh; line-height:1; cursor:grab; font-family:"Segoe UI Symbol","DejaVu Sans","Noto Sans Symbols 2","Apple Symbols",serif; transform:translateY(-3%); }
+  .pc.w { color:#fbfdff; text-shadow:0 0 1px #0d0f1a,0 0 1px #0d0f1a,1px 1px 0 #0d0f1a,-1px -1px 0 #0d0f1a,1px -1px 0 #0d0f1a,-1px 1px 0 #0d0f1a,0 2px 3px rgba(0,0,0,.35); }
+  .pc.b { color:#141726; text-shadow:0 0 1px #e2e8f0,1px 1px 0 rgba(226,232,240,.55),-1px -1px 0 rgba(226,232,240,.55),0 2px 3px rgba(0,0,0,.35); }
+  .pc.ghost { opacity:.25; }
+  #drag { position:fixed; z-index:60; pointer-events:none; line-height:1; transform:translate(-50%,-55%); }
+  #boardMsg { position:absolute; inset:0; z-index:5; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  #boardMsg > div { background:rgba(13,15,26,.86); border:1px solid var(--line); border-radius:10px; padding:14px 18px; max-width:80%; text-align:center; pointer-events:auto; }
+  #boardMsg .big { font-size:20px; font-weight:700; margin-bottom:4px; }
+  #cmdBar { display:flex; gap:6px; }
+  #cmdIn { flex:1; }
+  #proposal { min-height:0; }
+  #proposal .prow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:var(--surface2); border:1px solid var(--acc); border-radius:8px; padding:8px 10px; }
+  #proposal .prow .t { flex:1 1 200px; }
+  #proposal .cand { font-family:ui-monospace,monospace; }
+  #controls { display:flex; gap:5px; flex-wrap:wrap; justify-content:center; }
+  #controls .sep { width:1px; background:var(--line); margin:0 4px; }
+
+  #side { border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; background:var(--panel); }
+  #status { padding:10px 12px; border-bottom:1px solid var(--line); }
+  #status .main { font-weight:600; }
+  #status .sub { color:var(--dim); font-size:12px; }
+  #people { border-bottom:1px solid var(--line); max-height:30%; overflow:auto; }
+  #people h3, .ph { margin:0; padding:8px 12px 4px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); }
+  .rrow { padding:4px 12px 6px; font-size:13px; }
+  .rrow .nm { font-weight:600; margin-right:6px; }
+  .rrow button { font-size:12px; padding:1px 8px; margin-left:6px; }
+  #tabs { display:flex; border-bottom:1px solid var(--line); }
+  .tab { flex:1; border:0; border-radius:0; background:transparent; padding:8px 4px; color:var(--dim); }
+  .tab.active { color:var(--fg); box-shadow:inset 0 -2px 0 var(--acc); }
+  .ubadge { background:var(--bad); color:#fff; border-radius:10px; padding:0 6px; font-size:11px; margin-left:4px; }
+  .pane { flex:1; min-height:0; display:flex; flex-direction:column; }
+  #movesOut { flex:1; overflow:auto; padding:6px 12px; }
+  #movesOut table { border-collapse:collapse; width:100%; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+  #movesOut td { padding:2px 6px; }
+  #movesOut td.n { color:var(--dim); width:2.5em; text-align:right; }
+  #movesOut td.m { cursor:pointer; border-radius:4px; }
+  #movesOut td.m:hover { background:var(--surface2); }
+  #movesOut td.m.cur { background:var(--acc); }
+  .paneBar { display:flex; gap:6px; flex-wrap:wrap; padding:8px 12px; border-top:1px solid var(--line); }
+  #chatOut { flex:1; overflow:auto; padding:8px 12px; }
+  .msg { margin:0 0 8px; } .msg .hd { font-size:12px; color:var(--dim); } .msg .hd b { color:var(--fg); }
+  .msg .body { white-space:pre-wrap; word-break:break-word; }
+  .msg.own .body { background:rgba(54,101,182,.28); border-radius:8px; padding:3px 8px; display:inline-block; }
+  .msg.sys { color:var(--dim); font-size:12px; text-align:center; }
+  #consoleOut { flex:1; overflow:auto; padding:8px 12px; white-space:pre-wrap; word-break:break-word; user-select:text; }
+  #consoleOut .err { color:var(--bad); } #consoleOut .cmd { color:var(--acc-h); } #consoleOut .ok { color:var(--ok); } #consoleOut .ai { color:#c4b5fd; }
+  .inBar { display:flex; border-top:1px solid var(--line); }
+  .inBar input { flex:1; min-width:0; border:0; border-radius:0; }
+  .inBar button { border:0; border-left:1px solid var(--line); border-radius:0; }
+  #aiPane { overflow:auto; padding:10px 12px; }
+  #aiPane h4 { margin:12px 0 4px; font-size:13px; }
+  .meter { height:8px; background:var(--code); border:1px solid var(--line); border-radius:5px; overflow:hidden; margin:6px 0; }
+  .meter > div { height:100%; width:0; background:var(--acc-h); transition:width .2s; }
+  #aiTrace { font-size:12px; }
+
+  #overlay { position:fixed; inset:0; background:rgba(1,4,9,.8); display:flex; align-items:center; justify-content:center; z-index:70; padding:16px; }
+  #overlay .card { max-width:540px; width:100%; max-height:90vh; overflow:auto; }
+  #overlay h2 { margin:0 0 8px; font-size:18px; }
+  #overlay .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
+  #qrCanvas { background:#fff; padding:8px; border-radius:6px; image-rendering:pixelated; width:240px; height:240px; display:block; margin:8px auto; }
+  .promo { display:flex; gap:8px; justify-content:center; }
+  .promo button { font-size:44px; width:72px; height:72px; padding:0; background:var(--light); }
+  #tip { position:fixed; z-index:200; max-width:260px; padding:6px 10px; background:var(--surface3); color:var(--fg); border:1px solid var(--line); border-radius:6px; font-size:12px; line-height:1.35; pointer-events:none; opacity:0; visibility:hidden; transition:opacity .12s; box-shadow:0 4px 14px rgba(0,0,0,.45); }
+  #tip.show { opacity:1; visibility:visible; }
+
+  /* ---- tablets and phones ---- */
+  @media (max-width:1100px) { .badge-local { display:none; } #game { grid-template-columns:minmax(0,1fr) 320px; } }
+  @media (max-width:900px) {
+    #game { display:block; overflow:auto; }
+    #stage { overflow:visible; }
+    #side { height:auto; }
+    #movesOut, #chatOut, #consoleOut { min-height:180px; max-height:45vh; }
+    #boardCol { width:min(100%, 620px); }
+    #side { border-left:0; border-top:1px solid var(--line); min-height:420px; }
+  }
+  @media (max-width:700px) {
+    #top { padding:.55rem .85rem; gap:.4rem .7rem; }
+    .pill { display:none; }
+    #hdrRoom { order:5; flex:1 1 100%; }
+    #stage { padding:8px; }
+    .cbtn { min-height:44px; min-width:44px; padding:0 10px; }
+    .cbtn .lbl { display:none; }
+    input, select, textarea { font-size:16px !important; }
+    #overlay { padding:10px; align-items:flex-end; }
+    #overlay .card { max-height:88dvh; padding:16px; border-radius:14px 14px 10px 10px; }
+    #overlay .actions button { flex:1 1 40%; min-height:44px; }
+    #landing { padding:18px 12px 48px; } #landing h1 { font-size:22px; } #landing .card { padding:14px; }
+    #landing .row > button { flex:1 1 100%; min-height:46px; }
+    .tab { min-height:44px; }
+    .clock { font-size:18px; min-width:80px; }
+  }
+  @media (max-width:380px) { #top .brand { font-size:1rem; } .header-icon { width:32px; height:32px; } }
+</style>
+</head>
+<body>
+
+<header id="top">
+  <a class="brand" id="brand" href="./" title="chess webCLI home">chess webCLI</a>
+  <span class="pill">peer-to-peer</span>
+  <span class="badge-local" title="Moves go directly between the people in the room. We run no game server, and games against the computer never leave this device.">No game server</span>
+  <div id="hdrRoom" class="hidden">
+    <span id="roomInfo"></span>
+    <button id="btnInvite" class="header-icon" type="button" title="Copy invite link" aria-label="Copy invite link"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
+    <button id="btnQr" class="header-icon" type="button" title="Show the invite as a QR code" aria-label="Show invite QR code"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></button>
+  </div>
+  <nav class="help-nav" aria-label="Help">
+    <button id="btnInstall" class="header-icon hidden" type="button" title="Install chess webCLI as an app on this device (it then opens offline)" aria-label="Install as an app"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+    <button id="btnNew" class="header-icon hidden" type="button" title="Back to the start screen" aria-label="Back to the start screen"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+    <a href="about/" class="header-icon" id="navAbout" title="How it works" aria-label="How it works"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></a>
+    <a href="about/#limits" class="header-icon" id="navLimits" title="What it is and is not" aria-label="What it is and is not"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></a>
+    <a href="https://github.com/tejaswigowda/chess-webCLI" class="header-icon gh" target="_blank" rel="noopener" title="Source on GitHub" aria-label="Source on GitHub"></a>
+  </nav>
+</header>
+
+<div id="landing">
+  <h1>Chess you open with a link</h1>
+  <p class="sub">Make a room, send the link, play. Moves go directly between browsers. No account, no game server, and an optional on-device AI that can only ever pick a legal move you then confirm.</p>
+
+  <div id="offlineNote" class="banner warn hidden">You are offline. Games on this device work. A room needs a connection to reach the introduction servers.</div>
+  <div id="fatal" class="banner bad hidden"></div>
+
+  <div class="card" id="pane-room">
+    <h2>Play a friend</h2>
+    <div id="invitedNote" class="banner info hidden">You opened an invite link. Nothing is sent anywhere until you join.</div>
+    <label for="name">Display name (self-asserted; others see it as typed)</label>
+    <input id="name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional)">
+    <div class="row" id="createOpts">
+      <div><label for="selColor">You play</label><select id="selColor"><option value="w">White</option><option value="b">Black</option><option value="r" selected>Random</option></select></div>
+      <div><label for="selTc">Clock</label><select id="selTc">
+        <option value="">No clock</option><option value="180+2">3 + 2</option><option value="300+0">5 + 0</option><option value="300+3">5 + 3</option>
+        <option value="600+0" selected>10 + 0</option><option value="600+5">10 + 5</option><option value="900+10">15 + 10</option><option value="1800+0">30 + 0</option></select></div>
+    </div>
+    <div class="row">
+      <button id="btnCreate" class="primary" title="Create a new room and a fresh invite link. You take the colour you chose; the first person to join takes the other.">Create a room</button>
+      <button id="btnJoin" class="primary hidden" title="Join this room. If a seat is open the room creator's browser gives it to you; otherwise you watch.">Join room</button>
+    </div>
+    <div class="banner warn" style="margin-top:14px"><strong>Before you join a room:</strong> the other people in it can see your IP address, and so can the introduction servers. Games on this device (below) contact nothing.</div>
+    <details>
+      <summary>Network settings</summary>
+      <label class="chk"><input type="checkbox" id="setLan"> LAN only: don't contact the STUN server (peers on the same network only)</label>
+      <label for="setStun">STUN server</label>
+      <input id="setStun" type="text" autocomplete="off">
+      <label for="setRelays">Introduction relays (comma-separated wss:// URLs; blank = built-in list)</label>
+      <input id="setRelays" type="text" autocomplete="off">
+      <div class="row"><button id="btnSaveSettings" title="Use these network settings until this tab is closed">Save settings</button><span class="dim" id="settingsNote"></span></div>
+    </details>
+  </div>
+
+  <div class="card" id="pane-local">
+    <h2>Play on this device</h2>
+    <p class="dim" style="margin:0">Zero egress: nothing leaves this device. Works offline.</p>
+    <div class="row">
+      <div><label for="selLevel">Computer strength</label><select id="selLevel"></select></div>
+      <div><label for="selLocalColor">You play</label><select id="selLocalColor"><option value="w">White</option><option value="b">Black</option><option value="r">Random</option></select></div>
+    </div>
+    <div class="row">
+      <button id="btnEngine" class="primary" title="Play against the local engine. It runs in this tab, bounded by depth, positions searched and time.">Play the computer</button>
+      <button id="btnLocal" title="Two people, one device: take turns on the same board.">Pass and play</button>
+      <button id="btnAnalysis" title="A board with no opponent: load a FEN or PGN, try moves, ask the engine.">Analysis board</button>
+    </div>
+  </div>
+
+  <div class="card dim">
+    <strong style="color:var(--fg)">How this works</strong> <span class="dim">(<a href="about/">more</a>)</span>
+    <ul class="plain">
+      <li>The invite secret lives only after the <code>#</code> in the link; browsers never send it to a server.</li>
+      <li>Every move is signed by the player who made it and checked by every browser in the room against the rules. A modified page cannot move for you, or make an illegal move.</li>
+      <li>Introductions go through public Nostr relays. They see a room hash and encrypted connection data, never the moves.</li>
+      <li>The computer opponent is a small search engine in this page, not a model. The optional AI is a small language model that runs in your browser, and only turns your words into one of the legal moves, which you then confirm.</li>
+      <li>A room exists only while someone is in it. Nothing is stored anywhere but this tab.</li>
+    </ul>
+  </div>
+</div>
+
+<div id="game" class="hidden">
+  <div id="stage">
+    <div id="boardCol">
+      <div class="pbar" id="barTop"><span class="who"></span><span class="caps"></span><span class="clock hidden"></span></div>
+      <div id="board" role="grid" aria-label="Chess board"></div>
+      <div class="pbar" id="barBot"><span class="who"></span><span class="caps"></span><span class="clock hidden"></span></div>
+      <div id="proposal"></div>
+      <div id="cmdBar">
+        <input id="cmdIn" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="Type a move: e4 · knight to f3 · take the pawn · castle · /help" aria-label="Type a move or a command">
+        <button id="cmdGo" class="primary" type="button" title="Play the typed move (it asks first if anything is unclear)">Go</button>
+      </div>
+      <div id="controls">
+        <button id="btnFlip" class="cbtn" type="button"><span class="lbl">Flip</span></button>
+        <button id="btnUndo" class="cbtn" type="button"><span class="lbl">Takeback</span></button>
+        <button id="btnDraw" class="cbtn" type="button"><span class="lbl">Draw</span></button>
+        <button id="btnResign" class="cbtn" type="button"><span class="lbl">Resign</span></button>
+        <button id="btnHint" class="cbtn" type="button"><span class="lbl">Hint</span></button>
+        <button id="btnAgain" class="cbtn" type="button"><span class="lbl">Rematch</span></button>
+        <span class="sep"></span>
+        <button id="btnFirst" class="cbtn" type="button"><span class="lbl"></span></button>
+        <button id="btnPrev" class="cbtn" type="button"><span class="lbl"></span></button>
+        <button id="btnNext" class="cbtn" type="button"><span class="lbl"></span></button>
+        <button id="btnLast" class="cbtn" type="button"><span class="lbl"></span></button>
+        <span class="sep"></span>
+        <button id="btnLeave" class="cbtn danger" type="button"><span class="lbl">Leave</span></button>
+      </div>
+    </div>
+  </div>
+  <div id="side">
+    <div id="status"><div class="main"></div><div class="sub"></div></div>
+    <div id="people"></div>
+    <div id="tabs">
+      <button id="tabMoves" class="tab active" type="button" title="The moves of this game">Moves</button>
+      <button id="tabChat" class="tab" type="button" title="Chat with the room">Chat <span id="chatBadge" class="ubadge hidden">0</span></button>
+      <button id="tabConsole" class="tab" type="button" title="The command console (type /help)">Console</button>
+      <button id="tabAi" class="tab" type="button" title="The optional on-device language model">AI</button>
+    </div>
+    <div id="paneMoves" class="pane">
+      <div id="movesOut"></div>
+      <div class="paneBar">
+        <button id="btnPgn" type="button" title="Copy this game as PGN">Copy PGN</button>
+        <button id="btnFen" type="button" title="Copy the position on the board as FEN">Copy FEN</button>
+        <button id="btnLoad" type="button" title="Load a FEN or PGN (on-device games only)">Load…</button>
+        <button id="btnDownload" type="button" title="Save this game as a .pgn file on this device">Save .pgn</button>
+      </div>
+    </div>
+    <div id="paneChat" class="pane hidden">
+      <div id="chatOut"></div>
+      <div class="inBar"><input id="chatIn" type="text" maxlength="500" autocomplete="off" enterkeyhint="send" placeholder="Message the room"><button id="chatSend" class="primary" type="button" title="Send to everyone in the room">Send</button></div>
+    </div>
+    <div id="paneConsole" class="pane hidden">
+      <div id="consoleOut" class="mono"></div>
+      <div class="inBar"><input id="consoleIn" class="mono" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send" placeholder="/help"><button id="consoleRun" class="primary" type="button" title="Run the command">Run</button></div>
+    </div>
+    <div id="paneAi" class="pane hidden"><div id="aiPane"></div></div>
+  </div>
+</div>
+
+<div id="overlay" class="hidden"><div class="card" id="overlayCard"></div></div>
+<div id="tip" role="tooltip"></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

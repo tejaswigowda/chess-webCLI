@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="chess webCLI">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#3665b6"/></linearGradient></defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <g fill="#81e2f8" opacity=".22"><rect x="96" y="96" width="80" height="80"/><rect x="256" y="96" width="80" height="80"/><rect x="176" y="176" width="80" height="80"/><rect x="336" y="176" width="80" height="80"/><rect x="96" y="256" width="80" height="80"/><rect x="256" y="256" width="80" height="80"/><rect x="176" y="336" width="80" height="80"/><rect x="336" y="336" width="80" height="80"/></g>
+  <path d="M170 416h182M186 416v-44c0-22 18-38 30-56l42-62-60 14c-18 4-34-4-40-22l-8-24c-4-10 0-22 10-30l90-74-10-28h36c66 0 116 58 116 134v192" fill="none" stroke="#fff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="268" cy="170" r="13" fill="#fff"/>
+</svg>

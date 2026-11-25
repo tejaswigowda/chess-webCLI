@@ -1,0 +1,21 @@
+{
+  "name": "chess-webcli",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "description": "Invite-link chess rooms, peer-to-peer, with a bounded on-device AI",
+  "scripts": {
+    "start": "node server.js",
+    "vendor": "node scripts/vendor.mjs",
+    "test": "node test/rules.mjs && node test/engine.mjs && node test/ai-bounds.mjs && node test/log.mjs && node test/e2e.mjs",
+    "screens": "node test/screens.mjs",
+    "test:rules": "node test/rules.mjs"
+  },
+  "devDependencies": {
+    "@mlc-ai/web-llm": "0.2.79",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.50.0",
+    "ws": "^8.18.0"
+  }
+}

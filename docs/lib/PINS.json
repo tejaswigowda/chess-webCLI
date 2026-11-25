@@ -1,0 +1,17 @@
+{
+  "trystero-nostr.js": {
+    "version": "0.27.0",
+    "sha256": "e38ca0a153946e0d209d895948a7dc6e1dcb7003ea6ae495d75cec42041f1c54",
+    "package": "@trystero-p2p/nostr"
+  },
+  "qrcode.js": {
+    "version": "1.5.2",
+    "sha256": "065509cfd450f89dbffccc8e37d16f5cb03099aef7c36ab2a23d27611bd97b03",
+    "package": "qrcode-generator"
+  },
+  "web-llm.js": {
+    "version": "0.2.79",
+    "sha256": "adf78adb083a12022ca09ad1612594b4c3b44f37ab9689b82671a2344f0cd606",
+    "package": "@mlc-ai/web-llm"
+  }
+}
