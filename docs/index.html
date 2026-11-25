@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <!-- connect-src: the page origin; wss: for the introduction relays (rooms only); the two model hosts, used
-     only after you press "Load model". Nothing else can be reached from this page. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self' wss: ws://localhost:* ws://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com; img-src 'self' data: blob:; manifest-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
+     only after you press "Load model"; api.github.com, only for a game you keep in a git repo.
+     Nothing else can be reached from this page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self' wss: ws://localhost:* ws://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://api.github.com; img-src 'self' data: blob:; manifest-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
 <title>chess-webCLI</title>
 <meta name="description" content="Chess rooms you open with a link, directly between browsers, plus a bounded on-device AI. No account and no game server.">
 <meta name="theme-color" content="#0d0f1a">
@@ -78,6 +79,12 @@
   #landing details { margin-top:12px; }
   #landing summary { cursor:pointer; color:var(--dim); }
   .chk { display:block; margin:6px 0; }
+  .grow { display:flex; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .grow:last-child { border-bottom:0; }
+  .grow .t { flex:1 1 220px; min-width:0; }
+  .grow .t b { display:block; }
+  .grow .t span { color:var(--dim); font-size:12px; }
+  #gitLine a { color:var(--link); }
 
   /* ---- game ---- */
   #game { display:grid; grid-template-columns:minmax(0,1fr) 380px; flex:1; min-height:0; }
@@ -234,7 +241,23 @@
       <div><label for="selColor">You play</label><select id="selColor"><option value="w">White</option><option value="b">Black</option><option value="r" selected>Random</option></select></div>
       <div><label for="selTc">Clock</label><select id="selTc">
         <option value="">No clock</option><option value="180+2">3 + 2</option><option value="300+0">5 + 0</option><option value="300+3">5 + 3</option>
-        <option value="600+0" selected>10 + 0</option><option value="600+5">10 + 5</option><option value="900+10">15 + 10</option><option value="1800+0">30 + 0</option></select></div>
+        <option value="600+0" selected>10 + 0</option><option value="600+5">10 + 5</option><option value="900+10">15 + 10</option><option value="1800+0">30 + 0</option>
+        <optgroup label="Days per move (needs a git repo)"><option value="d1">1 day per move</option><option value="d2">2 days per move</option><option value="d3">3 days per move</option><option value="d7">7 days per move</option><option value="d14">14 days per move</option></optgroup></select></div>
+    </div>
+    <div id="gitSection">
+      <label class="chk" id="useGitLabel"><input type="checkbox" id="useGit"> Keep this game in a git repo, so it can run for hours or weeks and nobody has to stay online</label>
+      <div id="gitBox" class="hidden">
+        <div id="gitJoinNote" class="banner info hidden"></div>
+        <div class="row" id="gitRepoRow">
+          <div><label for="gitRepo">GitHub repo (owner/name)</label><input id="gitRepo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="you/chess-games"></div>
+          <div style="flex:0 1 140px"><label for="gitBranch">Branch</label><input id="gitBranch" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="main"></div>
+        </div>
+        <label for="gitToken">GitHub token (a fine-grained token with "Contents: read and write" on that one repo)</label>
+        <input id="gitToken" type="password" autocomplete="off" placeholder="github_pat_…">
+        <label class="chk"><input type="checkbox" id="gitRemember"> Remember the token on this device (otherwise it is forgotten when this tab closes)</label>
+        <label class="chk" id="gitReadableLabel"><input type="checkbox" id="gitReadable"> Readable in the repo: plain moves, and commit messages like "12... Nf6 (Bob)". Otherwise the file is encrypted and only people with the link can read the game.</label>
+        <p class="dim" style="margin:6px 0 0;font-size:12px">Each move is one commit. Both players need write access to the repo (add your opponent as a collaborator); anyone can follow a public repo without a token. GitHub cannot forge a move: every move is signed by the player who made it. This game's seat key and link are kept on this device until you remove the game.</p>
+      </div>
     </div>
     <div class="row">
       <button id="btnCreate" class="primary" title="Create a new room and a fresh invite link. You take the colour you chose; the first person to join takes the other.">Create a room</button>
@@ -264,6 +287,12 @@
       <button id="btnLocal" title="Two people, one device: take turns on the same board.">Pass and play</button>
       <button id="btnAnalysis" title="A board with no opponent: load a FEN or PGN, try moves, ask the engine.">Analysis board</button>
     </div>
+  </div>
+
+  <div class="card hidden" id="pane-games">
+    <h2>Your games in git repos</h2>
+    <p class="dim" style="margin:0">Kept on this device: each game's link and your seat key. The game itself lives in its repo.</p>
+    <div id="gamesList"></div>
   </div>
 
   <div class="card dim">

@@ -1,6 +1,6 @@
 {
   "name": "chess-webcli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "GPL-3.0-only",
   "type": "module",
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node server.js",
     "vendor": "node scripts/vendor.mjs",
-    "test": "node test/rules.mjs && node test/engine.mjs && node test/ai-bounds.mjs && node test/log.mjs && node test/e2e.mjs",
+    "test": "node test/rules.mjs && node test/engine.mjs && node test/ai-bounds.mjs && node test/log.mjs && node test/log-async.mjs && node test/store.mjs && node test/e2e.mjs && node test/e2e-git.mjs",
     "screens": "node test/screens.mjs",
     "test:rules": "node test/rules.mjs"
   },

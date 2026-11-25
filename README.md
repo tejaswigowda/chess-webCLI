@@ -8,7 +8,7 @@ Chess rooms you open with a link, played directly between browsers. **Link in, g
 
 **Read more: [the About page](docs/about/index.html)** (served at `/about/`).
 
-**Status: v0.1.0 (protocol 1). Not yet run on real devices across real networks.** `npm test` runs 150+ checks: the rules engine (perft against published counts), the engine, the move grammar, the model bounds (with scripted fake models), the signed log, and real Chrome pages playing each other over WebRTC through a mock relay. The model path has **not** been run on a real GPU, and **no model has been evaluated on this task yet**.
+**Status: v0.2.0 (protocol 1). Not yet run on real devices across real networks, or against the real GitHub API.** `npm test` runs 237 checks: the rules engine (perft against published counts), the engine, the move grammar, the model bounds (with scripted fake models), the signed log, the git store, real Chrome pages playing each other over WebRTC through a mock relay, and real Chrome pages playing a multi-day game through a mock GitHub API with peer-to-peer switched off. The model path has **not** been run on a real GPU, and **no model has been evaluated on this task yet**.
 
 ---
 
@@ -30,7 +30,7 @@ On-device games are zero-egress. Rooms cannot be, because moves have to reach th
 | **in** | an invite link, or nothing (for a game on this device) |
 | **out** | a game; PGN on your device if you save it |
 | **not** | a rated server, matchmaking, adjudication or anti-cheat |
-| **egress** | on-device games: none. Rooms: relays, STUN, the people in the room. Model: two download hosts, once, when you press Load |
+| **egress** | on-device games: none. Rooms: relays, STUN, the people in the room. Git-backed games: also `api.github.com`. Model: two download hosts, once, when you press Load |
 | **fetches** | code: none from a CDN (self-hosted, hash-pinned) |
 | **repro** | the engine is seeded: the same position, level and move number give the same reply |
 
@@ -43,6 +43,7 @@ On-device games are zero-egress. Rooms cannot be, because moves have to reach th
 - **Full rules**: checks and pins, castling (not through or out of check), en passant (including the discovered-check case), promotion, checkmate, stalemate, threefold repetition, fifty-move rule, insufficient material. SAN, UCI, FEN and PGN in and out. Perft-tested against six published positions.
 - **Clocks with increment**: 3+2 up to 30+0, or none. Self-reported by each mover and capped at what they had plus the increment. Flags are claimed automatically.
 - **Takeback, draw and rematch by consent**, resignation, review of every move (arrow keys), watchers, chat, copy or save PGN (all games in the room), copy FEN.
+- **Games that last (10 minutes to weeks), kept in a git repo**: tick *Keep this game in a git repo*, give `owner/repo` and a token, and the signed log is committed to the repo, **one commit per move**. Nobody has to stay online: the opponent claims the open seat whenever they open the link, and each player moves when it suits them. Live clocks or **1, 2, 3, 7 or 14 days per move**. When both of you are online, moves also go directly between browsers. See [below](#games-kept-in-a-git-repo).
 - **Keep your seat through a reload**: your seat key and the log live in the tab's `sessionStorage`; reload and you are back in your seat. **Leave** deletes them.
 - **Play on this device, offline**: against the local engine (5 levels, each bounded by depth, positions searched and time), pass and play, or an analysis board with FEN/PGN loading.
 - **Type your moves**: notation (`e4`, `Nxe5`, `O-O`, `e7e8q`) plays at once; plain words ("knight to f3", "take the queen", "castle long", "kingside knight out", "bishop blocks on d2") go through a fixed grammar that can only return legal moves, and are proposed for you to confirm. Several matches become buttons.
@@ -82,6 +83,28 @@ Models (WebLLM builds): Qwen2.5 1.5B Instruct (default, ≈1.6 GB), Qwen2.5 0.5B
 
 ---
 
+## Games kept in a git repo
+
+For games that outlast one sitting. The repo is where the game lives and how it travels; it is never the referee.
+
+```
+Ann creates ──commit "event 0"──► owner/repo : chess-webCLI/<id>.json ◄──commit "event 1"── Bob claims Black (Ann offline)
+Ann moves  ──commit──►            one file, one commit per event            ◄──commit── Bob moves, days later
+                     every page replays the file and checks every signature
+```
+
+- **The link says where**: `#k=<secret>&s=<creator key>&g=<owner/repo>[&b=<branch>]`. Still all after `#`.
+- **Encrypted by default**: the file is AES-GCM with a key derived from the link, and commit messages say only `chess-webCLI: event 12`. Tick *Readable* for plain moves, PGN in the file, one event per line, and messages like `12... Nf6 (Bob)`, so the repo's history reads as the game.
+- **Nothing to trust in the repo**: a file loaded from it is checked like a peer's log. Anyone with write access can delete or roll it back; the pages keep their longer copy and write it back. They cannot forge, reorder or alter a move.
+- **Races**: every commit names the version it replaces. If someone committed first, the page loads theirs, settles the two logs the same way peers do (`choose`), and writes again; a losing event is reported, never silently dropped.
+- **Seats**: the creator takes a colour; the first person to press *Take the seat* claims the other with a signed `claim` event, whether or not the creator is online.
+- **Days per move**: the side to move must move before its deadline, or either player's page records a loss on time. Times are self-reported (each event carries its writer's clock); an event dated before the one it follows, or more than 10 minutes into the reading page's future, is refused.
+- **On this device**: a player's seat key, the link and a cached copy of the log are kept in `localStorage` (games kept in a repo only), and the start screen lists your games and whose move it is (it checks each repo). *Remove* deletes them. The token stays in the tab unless you tick *Remember*.
+- **Access**: both players need write access to the repo (add your opponent as a collaborator) and a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with *Contents: read and write* on that one repo. Anyone can follow a public repo with no token. The page polls the repo every 20 s while open (60 s without a token), using conditional requests.
+- **Console**: `/claim`, `/sync`, `/token <token> [remember]`, `/repo`, `/games`, `/forget`.
+
+---
+
 ## Usage
 
 1. **Create a room.** Pick your colour and clock, press **Create a room**, then copy the link (link icon) or show the QR code.
@@ -105,12 +128,13 @@ On this device: **Play the computer**, **Pass and play** or **Analysis board** o
 | Peers | each person in the room, directly (WebRTC data channel) | rooms only |
 | Model weights | `huggingface.co` (redirects to `*.hf.co`) | only after you press **Load model** |
 | Model GPU library | `raw.githubusercontent.com` | only after you press **Load model** |
+| Git-backed games | `api.github.com` | only for a game you keep in a repo; reads and commits that one file |
 
 The page's Content-Security-Policy allows exactly these (plus `ws://localhost` for development). `/egress` prints the declared list next to the hosts the page has actually contacted. The relays are the five rtc-webCLI pins; public relays come and go, so replace them in `docs/js/app.js` when they stop passing messages.
 
 **What each party can see.** People in the room: your moves, chat, self-asserted name and IP address. Relays: your IP, a room topic hash and encrypted connection data, never the secret or a move (`npm test` asserts that no relay frame contains the secret or a move). STUN: your IP. The page host: that you loaded the page, never the secret.
 
-**Nothing is kept** beyond the tab: name, settings, seat key and game log are in `sessionStorage`, dropped when the tab closes, deleted on **Leave**. What stays outside the page: a `.pgn` you saved, a copied invite link, browser history, the app files the service worker caches, and a downloaded model (browser cache, until you clear site data).
+**Nothing is kept** beyond the tab, except for games you keep in a git repo: name, settings, seat key and game log are in `sessionStorage`, dropped when the tab closes, deleted on **Leave**. A git-backed game's seat key, link and log copy (and your token, if you tick *Remember*) stay in `localStorage` until you press **Remove**. GitHub sees your IP, your token and the (encrypted, unless you chose readable) file. What stays outside the page: a `.pgn` you saved, a copied invite link, browser history, the app files the service worker caches, and a downloaded model (browser cache, until you clear site data).
 
 **Verify in DevTools:** Network tab → play the computer: only requests to the page origin. Create a room: WebSockets to the relays above. Search the log for the characters after `#k=`: they appear nowhere.
 
@@ -119,7 +143,9 @@ The page's Content-Security-Policy allows exactly these (plus `ws://localhost` f
 ## What it is and is not
 
 - **No server means no referee**: no ratings, matchmaking or anti-cheat. Nothing stops someone consulting an engine in another tab. For playing people you know.
-- **A game lives as long as its players**: if a player closes their tab, their seat key is gone and the game cannot be finished (a reload is fine).
+- **A live room's game lives as long as its players**: if a player closes their tab, their seat key is gone and the game cannot be finished (a reload is fine). Keep the game in a git repo if it should outlive a tab.
+- **Correspondence times are self-reported**, like the live clocks. The repo's commit history is a second record either player can point to.
+- **GitHub only, for now**: the store talks to GitHub's REST API. Gitea, Forgejo and GitLab have similar APIs but are not wired up.
 - **Clocks are self-reported**, capped at remaining time plus increment.
 - **A newcomer who arrives while the creator is away** trusts the people present for who holds the second seat (the creator's seat is pinned by the link). Moves themselves are always verified.
 - **Networks that keep devices apart** (some guest, venue and corporate Wi-Fi) block peer-to-peer connections, and there is no relay server to fall back on.
@@ -147,12 +173,13 @@ Or serve `docs/` with any static server (GitHub Pages works). Rooms need a secur
 docs/index.html          the page (markup and styles)
 docs/js/app.js           UI, rooms, console, clocks
 docs/js/chess.js         rules engine (0x88), SAN/UCI/FEN/PGN
-docs/js/log.js           the signed event log: replay, verify, settle forks
+docs/js/log.js           the signed event log: replay, verify, settle forks, claims, deadlines
+docs/js/store.js         git-backed games: the GitHub contents API, encryption, conflicts
 docs/js/engine.js        alpha-beta engine; engine-worker.js runs it off the main thread
 docs/js/intent.js        the deterministic move grammar
 docs/js/ai.js            the bounded model layer
 docs/lib/                vendored, hash-pinned: trystero-nostr.js, qrcode.js, web-llm.js
-test/                    rules.mjs, engine.mjs, ai-bounds.mjs, log.mjs, e2e.mjs, screens.mjs
+test/                    rules, engine, ai-bounds, log, log-async, store, e2e, e2e-git, screens; mock-relay, mock-github, serve
 ```
 
 ### Tests and gates
@@ -164,11 +191,15 @@ test/                    rules.mjs, engine.mjs, ai-bounds.mjs, log.mjs, e2e.mjs,
 | Grammar | 20+ phrasings to legal moves, candidates, commands or "none" | automated |
 | Model bounds | closed list, re-check, attempt cap, narrowing, allow-list | automated, fake models |
 | Signed log | forged, illegal, out-of-turn, tampered, dropped and foreign events refused; consent; fork convergence; rematch; flag | automated |
+| Signed log, async | self-claimed seats, times that go backwards, days-per-move deadlines, early and wrong-side flags, claims refused in live rooms | automated |
+| Git store | create, load, 304, conflict, encryption, wrong link, readable form, no token, bad token, missing repo, path traversal | automated, mock API |
+| Git-backed games | create, claim while the creator is offline, play across closed tabs, games list, token prompt, commit race, watcher with no token, readable commit messages, a passed deadline, a future-dated event refused; peer-to-peer off | automated, real Chrome + mock API |
 | Rooms | seating, moves, refusals, a forged move, a watcher, takeback, reload keeps seat, draw, rematch, resignation, identical logs on 3 peers | automated, real Chrome + mock relay |
 | Privacy | secret absent from relay frames and page requests; no move in relay frames; no non-origin fetch | automated |
 | On-device | engine game, takeback, hint, reload restore, PGN load; only the page origin contacted | automated |
 | Model on a real GPU | load, latency, accuracy on a phrase set | **open** |
 | Real devices, real relays, real networks | phone ↔ laptop, different networks | **open** |
+| The real GitHub API | CORS, ETags, token scopes, rate limits | **open** |
 
 ---
 

@@ -13,6 +13,9 @@
 // Event types and their signer:
 //   init   {color, pub, name, tc, fen}  the room creator, who takes `color`. Anchored by the invite link.
 //   seat   {color, pub, name}           the creator, seating the first other person in the open colour.
+//   claim  {color, pub, name}           the claimant itself, for the open seat, only in a game whose init
+//                                       says claim:true (games kept in a git repo, where the creator may be
+//                                       offline when the opponent arrives). The first claim in the log wins.
 //   move   {by, uci, clk}               the seat to move. clk = mover's own remaining ms (self-reported).
 //   offer  {by, kind}                   draw | takeback | rematch
 //   reply  {by, kind, accept}           the other seat
@@ -21,6 +24,11 @@
 //
 // Every event also carries i (its index), prev (hash of the previous event, or the room id for i = 0)
 // and sig. `by` is a colour in the current game (colours swap on a rematch).
+//
+// Games that may run for days carry `at` (ms since 1970, the writer's own clock) on every event, and
+// may use correspondence time: tc = {days} per move. `at` must never go backwards along the log, and a
+// flag for a days-per-move game is valid only if its `at` is past the deadline. Like the live clocks,
+// these times are self-reported; the receiving page also refuses an event dated in its future.
 
 import { Chess, START_FEN } from './chess.js';
 
@@ -87,7 +95,7 @@ const onlyKing = (g, color) => g.board().flat().every((p) => !p || (color === 'w
 export async function replay(events, { room = 'local', anchor = null, trust = false } = {}) {
   const st = {
     ok: true, error: null, at: -1, events,
-    tc: null, creator: null, seats: { w: null, b: null }, game: null, startFen: START_FEN,
+    tc: null, creator: null, claim: false, timed: false, lastAt: 0, turnStart: null, deadline: null, seats: { w: null, b: null }, game: null, startFen: START_FEN,
     result: null, pending: null, clocks: { w: null, b: null }, clockLog: [], moveIdx: [], gameNo: 1, games: [], tip: room,
   };
   const fail = (i, error) => ({ ...st, ok: false, error, at: i });
@@ -108,12 +116,19 @@ export async function replay(events, { room = 'local', anchor = null, trust = fa
     } else {
       if (i === 0) return fail(i, 'the first event must be init');
       if (ev.t === 'seat') signer = st.creator.pub;
+      else if (ev.t === 'claim') signer = typeof ev.pub === 'string' ? ev.pub : null;
       else {
         if (!['w', 'b'].includes(ev.by) || !st.seats[ev.by]) return fail(i, 'signed by an empty seat');
         signer = st.seats[ev.by].pub;
       }
     }
+    if (!signer) return fail(i, 'no signer');
     if (!trust && !(await verifyEvent(signer, ev))) return fail(i, 'bad signature');
+    if (st.timed && i > 0) {
+      if (!Number.isFinite(ev.at)) return fail(i, 'missing time');
+      if (ev.at < st.lastAt) return fail(i, 'dated before the event it follows');
+      st.lastAt = ev.at;
+    }
 
     const g = st.game;
     switch (ev.t) {
@@ -122,16 +137,27 @@ export async function replay(events, { room = 'local', anchor = null, trust = fa
         if (Chess.validateFen(fen)) return fail(i, 'bad starting position');
         st.startFen = fen;
         st.game = new Chess(fen);
-        st.tc = ev.tc && Number.isFinite(ev.tc.base) && ev.tc.base > 0 ? { base: Math.min(ev.tc.base, 3 * 3600e3), inc: Math.max(0, Math.min(ev.tc.inc || 0, 180e3)) } : null;
+        if (ev.tc && Number.isFinite(ev.tc.days)) {
+          if (ev.tc.days < 1 || ev.tc.days > 30) return fail(i, 'days per move must be 1 to 30');
+          st.tc = { days: Math.round(ev.tc.days) };
+        } else st.tc = ev.tc && Number.isFinite(ev.tc.base) && ev.tc.base > 0 ? { base: Math.min(ev.tc.base, 3 * 3600e3), inc: Math.max(0, Math.min(ev.tc.inc || 0, 180e3)) } : null;
+        st.claim = ev.claim === true;
+        st.timed = Number.isFinite(ev.at);
+        if (st.timed) st.lastAt = ev.at;
+        else if (st.tc?.days) return fail(i, 'a days-per-move game needs times on its events');
         st.creator = { pub: ev.pub, keyId: await keyIdOf(ev.pub), name: String(ev.name || '').slice(0, 24) };
         st.seats[ev.color] = { pub: ev.pub, keyId: st.creator.keyId, name: st.creator.name, creator: true };
-        if (st.tc) st.clocks = { w: st.tc.base, b: st.tc.base };
+        if (st.tc?.base) st.clocks = { w: st.tc.base, b: st.tc.base };
         break;
       }
+      case 'claim':
+        if (!st.claim) return fail(i, 'seats in this game are given by the creator, not claimed');
+        // falls through
       case 'seat': {
         if (!['w', 'b'].includes(ev.color) || st.seats[ev.color]) return fail(i, 'that seat is not open');
         if (typeof ev.pub !== 'string' || ev.pub === st.creator.pub) return fail(i, 'bad seat key');
-        st.seats[ev.color] = { pub: ev.pub, keyId: await keyIdOf(ev.pub), name: String(ev.name || '').slice(0, 24) };
+        st.seats[ev.color] = { pub: ev.pub, keyId: await keyIdOf(ev.pub), name: String(ev.name || '').slice(0, 24), claimed: ev.t === 'claim' };
+        if (st.seats.w && st.seats.b) startTurn(ev);
         break;
       }
       case 'move': {
@@ -141,7 +167,8 @@ export async function replay(events, { room = 'local', anchor = null, trust = fa
         const m = g.move(String(ev.uci || ''));
         if (!m) return fail(i, `illegal move ${String(ev.uci).slice(0, 8)}`);
         st.moveIdx.push(i);
-        if (st.tc) {
+        startTurn(ev);
+        if (st.tc?.base) {
           const cap = (st.clocks[ev.by] ?? st.tc.base) + st.tc.inc;
           const clk = Number.isFinite(ev.clk) ? Math.max(0, Math.min(ev.clk, cap)) : st.clocks[ev.by];
           st.clocks[ev.by] = clk;
@@ -171,14 +198,16 @@ export async function replay(events, { room = 'local', anchor = null, trust = fa
         if (p.kind === 'takeback') {
           const n = g.turn === p.by ? 2 : 1; // undo back to before the requester's last move
           for (let k = 0; k < n; k++) { g.undo(); st.moveIdx.pop(); st.clockLog.pop(); }
-          if (st.tc) st.clocks = st.clockLog.length ? { ...st.clockLog[st.clockLog.length - 1] } : { w: st.tc.base, b: st.tc.base };
+          if (st.tc?.base) st.clocks = st.clockLog.length ? { ...st.clockLog[st.clockLog.length - 1] } : { w: st.tc.base, b: st.tc.base };
+          startTurn(ev);
         }
         if (p.kind === 'rematch') {
           st.games.push({ pgn: pgnOf(st), result: st.result });
           st.seats = { w: st.seats.b, b: st.seats.w };
           st.game = new Chess(START_FEN); st.startFen = START_FEN;
           st.result = null; st.moveIdx = []; st.clockLog = []; st.gameNo++;
-          if (st.tc) st.clocks = { w: st.tc.base, b: st.tc.base };
+          if (st.tc?.base) st.clocks = { w: st.tc.base, b: st.tc.base };
+          startTurn(ev);
         }
         break;
       }
@@ -191,6 +220,10 @@ export async function replay(events, { room = 'local', anchor = null, trust = fa
       case 'flag': {
         if (st.result || !st.tc) return fail(i, 'no clock is running');
         if (!['w', 'b'].includes(ev.color)) return fail(i, 'bad flag');
+        if (st.tc.days) {
+          if (ev.color !== g.turn) return fail(i, 'only the side to move can run out of time');
+          if (!(st.deadline && ev.at >= st.deadline)) return fail(i, 'the deadline has not passed');
+        }
         const winner = other(ev.color);
         st.clocks[ev.color] = 0;
         st.result = onlyKing(g, winner)
@@ -201,16 +234,25 @@ export async function replay(events, { room = 'local', anchor = null, trust = fa
       }
       default: return fail(i, `unknown event type ${String(ev.t).slice(0, 12)}`);
     }
+    if (st.result) st.deadline = null;
     prev = await eventHash(ev);
   }
   st.tip = prev;
   return st;
+
+  // days-per-move: the side to move's time starts at this event
+  function startTurn(ev) {
+    if (!st.timed) return;
+    st.turnStart = ev.at;
+    st.deadline = st.tc?.days && st.seats.w && st.seats.b ? ev.at + st.tc.days * 864e5 : null;
+  }
 }
 
 export function pgnOf(st) {
   const w = st.seats.w?.name || 'White', b = st.seats.b?.name || 'Black';
   const headers = { Event: `chess-webCLI game ${st.gameNo}`, White: w, Black: b };
-  if (st.tc) headers.TimeControl = `${Math.round(st.tc.base / 1000)}+${Math.round(st.tc.inc / 1000)}`;
+  if (st.tc?.days) headers.TimeControl = `1/${st.tc.days * 86400}`;
+  else if (st.tc) headers.TimeControl = `${Math.round(st.tc.base / 1000)}+${Math.round(st.tc.inc / 1000)}`;
   if (st.result) headers.Termination = st.result.reason;
   return st.game.pgn(headers, st.result ? st.result.result : '*');
 }

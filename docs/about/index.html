@@ -70,10 +70,21 @@
   <li><b>Play.</b> Every move is an event signed by the seat to move, chained to the one before by hash. Every browser in the room replays every event through the rules engine and checks every signature.</li>
 </ol>
 
+<h2 id="git">Games kept in a git repo</h2>
+<p>For games that outlast one sitting, from a slow 10 minutes to weeks of correspondence. Tick <i>Keep this game in a git repo</i>, give <code>owner/repo</code> and a token, and the signed log below is committed to one file in that repo, one commit per event. Nobody has to stay online: the opponent claims the open seat whenever they open the link, each player moves when it suits them, and the start screen lists your games and whose move it is.</p>
+<ul>
+  <li><b>The repo stores and carries the game; it does not referee it.</b> Whatever a page loads from the repo is replayed and signature-checked like a log from a peer. GitHub, or anyone with write access, can delete or roll back the file, but cannot forge or alter a move.</li>
+  <li><b>Encrypted by default</b> with a key derived from the link; commit messages then say only "event 12". Choose <i>Readable</i> for plain moves and messages like "12... Nf6 (Bob)".</li>
+  <li><b>Time</b>: live clocks, or 1, 2, 3, 7 or 14 days per move. Times are self-reported; an event dated before the one it follows, or in the reading page's future, is refused.</li>
+  <li><b>Kept on this device</b> for such games only: your seat key, the link and a copy of the log, until you press <i>Remove</i>. The token stays in the tab unless you tick <i>Remember</i>.</li>
+  <li><b>Access</b>: both players need write access to the repo and a fine-grained token with <i>Contents: read and write</i> on it. Anyone can follow a public repo without one.</li>
+</ul>
+
 <h2 id="log">The signed log</h2>
 <p>There is no server to say what the position is, so the game is an append-only log that every peer holds and checks. The position is whatever the log replays to.</p>
 <pre>init   {color, pub, name, tc}   signed by the creator; its key id must match the link
 seat   {color, pub, name}       signed by the creator
+claim  {color, pub, name}       signed by the claimant (git-backed games only)
 move   {by, uci, clk}           signed by the seat to move
 offer  {by, kind}               draw | takeback | rematch
 reply  {by, kind, accept}       signed by the other seat: consent is a signature
@@ -128,14 +139,16 @@ every event: i, prev = hash(previous event), sig</pre>
   <tr><td>Peers</td><td>each person in the room, directly</td><td>rooms only</td></tr>
   <tr><td>Model weights</td><td><code>huggingface.co</code> (redirects to <code>*.hf.co</code>)</td><td>only when you press Load model</td></tr>
   <tr><td>Model GPU library</td><td><code>raw.githubusercontent.com</code></td><td>only when you press Load model</td></tr>
+  <tr><td>Git-backed games</td><td><code>api.github.com</code></td><td>only for a game you keep in a repo</td></tr>
 </table>
 <p>The page's Content-Security-Policy allows exactly these (plus <code>ws://localhost</code> for development); nothing else can be reached. <code>/egress</code> in the console prints the declared list next to the hosts the page has actually contacted. People in a room see each other's IP addresses, and so do the relays and the STUN server.</p>
-<p><b>Nothing is kept</b> beyond this tab: your name, settings, seat key and the game log live in <code>sessionStorage</code>, which the browser drops when the tab closes. A reload keeps them (so you keep your seat); <b>Leave</b> deletes them. A saved <code>.pgn</code> is a file on your device; a downloaded model stays in the browser cache until you clear site data.</p>
+<p><b>Nothing is kept</b> beyond this tab, except what a game kept in a git repo needs (above): your name, settings, seat key and the game log live in <code>sessionStorage</code>, which the browser drops when the tab closes. A reload keeps them (so you keep your seat); <b>Leave</b> deletes them. A saved <code>.pgn</code> is a file on your device; a downloaded model stays in the browser cache until you clear site data.</p>
 
 <h2 id="limits">What it is and is not</h2>
 <ul>
   <li><b>No server means no referee.</b> There is no rating, no matchmaking, no adjudication and no anti-cheat. It is for playing people you know.</li>
-  <li><b>A game lives as long as its players.</b> If a player closes their tab, their seat key is gone and that game cannot be finished. A reload is fine.</li>
+  <li><b>A live room's game lives as long as its players.</b> If a player closes their tab, their seat key is gone and that game cannot be finished. A reload is fine. Keep the game in a git repo if it should outlive a tab.</li>
+  <li><b>GitHub only for now</b>, and not yet tested against the real API (the tests use a stand-in).</li>
   <li><b>Networks that keep devices apart</b> (some guest, venue and corporate networks) stop peer-to-peer connections, and there is no relay server to fall back on.</li>
   <li><b>Clocks are trusted</b>, within the cap described above.</li>
   <li><b>The engine is modest</b>: a few hundred thousand positions per move, no book. Good for practice, not for analysis of master games.</li>

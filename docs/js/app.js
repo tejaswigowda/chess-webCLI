@@ -15,8 +15,9 @@ import { parseIntent, describeMove, describePosition, COMMANDS } from './intent.
 import { LEVELS, formatScore } from './engine.js';
 import { BoundedAI, MODELS, MODEL_HOSTS, MAX_ATTEMPTS } from './ai.js';
 import { PROTO, b64u, replay, nextEvent, signEvent, newSeatKey, importSeatKey, keyIdOf, choose, pgnOf, eventHash } from './log.js';
+import { GitStore, StoreError, defaultPath, REPO_RE, PATH_RE, BRANCH_RE } from './store.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const APP_ID = 'chess-webCLI';
 const TOPIC_LABEL = 'chess-webCLI/v1/topic';
 const SDP_LABEL = 'chess-webCLI/v1/sdp';
@@ -26,6 +27,9 @@ const RELAYS = ['wss://no.str.cr', 'wss://relay.wavlake.com', 'wss://nostr.hifis
 const DEFAULT_STUN = 'stun:stun.cloudflare.com:3478';
 const MAX_LOG = 4000;
 const FLAG_GRACE_MS = 1500;
+const FUTURE_SLACK_MS = 10 * 60e3;      // an event dated further ahead than this, by our clock, is refused
+const GIT_POLL_MS = { token: 20e3, anon: 60e3 };
+const GIT_API = 'https://api.github.com';
 const PINS = /*PINS*/{"trystero-nostr.js":{"version":"0.27.0","sha256":"e38ca0a153946e0d209d895948a7dc6e1dcb7003ea6ae495d75cec42041f1c54","package":"@trystero-p2p/nostr"},"qrcode.js":{"version":"1.5.2","sha256":"065509cfd450f89dbffccc8e37d16f5cb03099aef7c36ab2a23d27611bd97b03","package":"qrcode-generator"},"web-llm.js":{"version":"0.2.79","sha256":"adf78adb083a12022ca09ad1612594b4c3b44f37ab9689b82671a2344f0cd606","package":"@mlc-ai/web-llm"}}/*END-PINS*/;
 
 // ---------------------------------------------------------------------------- small helpers
@@ -132,6 +136,8 @@ const S = {
   // room
   secret: null, roomId: null, anchor: null, room: null, selfId: null, actions: {}, peers: new Map(), q: Promise.resolve(),
   chat: [], unread: 0, tab: 'moves', lastWarn: '',
+  // git-backed games
+  git: null, gitInfo: null, gitBusy: false, gitStatus: '', gitLastSync: 0, gitPoll: null, gitError: '',
 };
 const ai = new BoundedAI({ loadLib: () => loadVerified('web-llm.js') });
 
@@ -198,6 +204,7 @@ async function setLog(events, st, source = 'local') {
 
 async function commit(body) {
   if (!S.st) return false;
+  if (S.st.timed) body = { ...body, at: Math.max(Date.now(), S.st.lastAt) };
   let ev = nextEvent(S.st, body);
   if (S.mode === 'room') {
     if (!S.key) { log('You hold no seat in this room.', 'err'); return false; }
@@ -208,12 +215,16 @@ async function commit(body) {
   if (!st.ok) { log(`Not done: ${st.error}.`, 'err'); return false; }
   await setLog(events, st, 'local');
   if (S.mode === 'room') broadcast('ev', { ev });
+  if (S.git) gitPush();
   return true;
 }
 
 function persist() {
   try {
-    if (S.mode === 'room' && S.roomId) sessionStorage.setItem('chess.log.' + S.roomId, JSON.stringify(S.log));
+    if (S.mode === 'room' && S.roomId) {
+      sessionStorage.setItem('chess.log.' + S.roomId, JSON.stringify(S.log));
+      if (S.gitInfo && mySeat()) { keepSeatKey(); localStorage.setItem('chess.glog.' + S.roomId, JSON.stringify(S.log)); touchGame(); }
+    }
     else if (S.mode) sessionStorage.setItem('chess.local', JSON.stringify({ mode: S.mode, log: S.log, engineColor: S.engineColor, level: S.level }));
   } catch {}
 }
@@ -295,36 +306,259 @@ async function deriveRoom(secret) {
   const pw = new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: enc.encode(SDP_LABEL) }, key, 256));
   return { roomId: hex(topic), password: b64u.enc(pw) };
 }
-// Invite fragment: #k=<128-bit secret>&s=<creator key id>. Neither is ever sent to a server.
-const HASH_RE = /^#k=([A-Za-z0-9_-]{22})&s=([A-Za-z0-9_-]{22})$/;
-function parseInvite() {
-  const m = HASH_RE.exec(location.hash);
-  if (!m) return null;
-  try { const s = b64u.dec(m[1]); return s.length === 16 ? { secret: s, anchor: m[2] } : null; } catch { return null; }
+// Invite fragment: #k=<128-bit secret>&s=<creator key id>[&g=<owner/repo>[&b=<branch>][&p=<path>]].
+// None of it is ever sent to a server. g/b/p say where a git-backed game lives (p only when not the default).
+const B64_22 = /^[A-Za-z0-9_-]{22}$/;
+function parseInvite(hash = location.hash) {
+  if (!hash.startsWith('#k=')) return null;
+  const q = new URLSearchParams(hash.slice(1));
+  const k = q.get('k'), sKey = q.get('s');
+  if (!B64_22.test(k || '') || !B64_22.test(sKey || '')) return null;
+  for (const key of q.keys()) if (!['k', 's', 'g', 'b', 'p'].includes(key)) return null;
+  let secret;
+  try { secret = b64u.dec(k); } catch { return null; }
+  if (secret.length !== 16) return null;
+  const inv = { secret, anchor: sKey, git: null };
+  if (q.has('g')) {
+    const repo = q.get('g'), branch = q.get('b') || 'main', path = q.get('p') || null;
+    if (!REPO_RE.test(repo) || !BRANCH_RE.test(branch) || (path && (!PATH_RE.test(path) || path.includes('..')))) return null;
+    inv.git = { repo, branch, path };
+  }
+  return inv;
 }
-const inviteUrl = () => `${location.origin}${APP_DIR}#k=${b64u.enc(S.secret)}&s=${S.anchor}`;
+const fragmentFor = (secret, anchor, git) => {
+  let f = `#k=${b64u.enc(secret)}&s=${anchor}`;
+  if (git) { f += `&g=${git.repo}`; if (git.branch && git.branch !== 'main') f += `&b=${encodeURIComponent(git.branch)}`; if (git.customPath) f += `&p=${encodeURIComponent(git.path)}`; }
+  return f;
+};
+const inviteUrl = () => `${location.origin}${APP_DIR}${fragmentFor(S.secret, S.anchor, S.gitInfo)}`;
 
-async function keyFor(roomId, create = true) {
-  const k = 'chess.key.' + roomId;
-  try { const saved = JSON.parse(sessionStorage.getItem(k) || 'null'); if (saved) return await importSeatKey(saved); } catch {}
+// A live room's seat key lives in this tab only. A git-backed game's key is kept on this device
+// (localStorage) until you remove the game, because the game may take weeks.
+async function keyFor(roomId, { create = true, keep = false } = {}) {
+  const k = 'chess.key.' + roomId, gk = 'chess.gkey.' + roomId;
+  for (const [store, key] of [[localStorage, gk], [sessionStorage, k]]) {
+    try { const saved = JSON.parse(store.getItem(key) || 'null'); if (saved) { const imported = await importSeatKey(saved); if (keep) localStorage.setItem(gk, JSON.stringify(saved)); return imported; } } catch {}
+  }
   if (!create) return null;
   const key = await newSeatKey();
-  sessionStorage.setItem(k, JSON.stringify({ jwk: key.jwk, pub: key.pub }));
+  (keep ? localStorage : sessionStorage).setItem(keep ? gk : k, JSON.stringify({ jwk: key.jwk, pub: key.pub }));
   return key;
 }
 
 async function createRoom() {
+  const useGit = $('#useGit').checked;
+  const tcv = $('#selTc').value;
+  if (tcv.startsWith('d') && !useGit) { showFatal('Days-per-move games are kept in a git repo, so nobody has to stay online. Tick "Keep this game in a git repo" and fill it in, or pick a live clock.'); return; }
+  let git = null;
+  if (useGit) {
+    git = { repo: $('#gitRepo').value.trim(), branch: $('#gitBranch').value.trim() || 'main', readable: $('#gitReadable').checked };
+    if (!REPO_RE.test(git.repo)) { showFatal('The repo must look like owner/name, for example you/chess-games.'); return; }
+    if (!BRANCH_RE.test(git.branch)) { showFatal('That branch name is not valid.'); return; }
+    if (!$('#gitToken').value.trim()) { showFatal('A GitHub token is needed to commit the game. Make a fine-grained token with "Contents: read and write" on that one repo.'); return; }
+    saveToken(git.repo, $('#gitToken').value.trim(), $('#gitRemember').checked);
+  }
+  $('#fatal').classList.add('hidden');
   const secret = crypto.getRandomValues(new Uint8Array(16));
   const { roomId } = await deriveRoom(secret);
-  const key = await keyFor(roomId);
+  const key = await keyFor(roomId, { keep: !!git });
   const colorPick = $('#selColor').value === 'r' ? (crypto.getRandomValues(new Uint8Array(1))[0] & 1 ? 'w' : 'b') : $('#selColor').value;
-  const tcv = $('#selTc').value;
-  const tc = tcv ? { base: Number(tcv.split('+')[0]) * 1000, inc: Number(tcv.split('+')[1]) * 1000 } : null;
+  const tc = !tcv ? null : tcv.startsWith('d') ? { days: Number(tcv.slice(1)) } : { base: Number(tcv.split('+')[0]) * 1000, inc: Number(tcv.split('+')[1]) * 1000 };
   settings.name = $('#name').value.trim().slice(0, 24); saveSettings();
-  const init = await signEvent(key, nextEvent({ events: [], tip: roomId }, { t: 'init', v: PROTO, color: colorPick, pub: key.pub, name: settings.name || 'Room creator', tc, fen: null }));
+  const body = { t: 'init', v: PROTO, color: colorPick, pub: key.pub, name: settings.name || 'Room creator', tc, fen: null };
+  if (git) Object.assign(body, { claim: true, at: Date.now() });
+  const init = await signEvent(key, nextEvent({ events: [], tip: roomId }, body));
+  if (git) {
+    git.path = await defaultPath(secret);
+    const store = makeStore(git, secret);
+    try {
+      const r = await store.load();
+      if (r.events?.length) throw new StoreError('A game file already exists at that path.');
+      await store.save([init], commitMessage([init], init, git.readable), { pgn: '' });
+    } catch (e) { showFatal(`Could not start the game in ${git.repo}: ${e.message}`); localStorage.removeItem('chess.gkey.' + roomId); return; }
+    localStorage.setItem('chess.glog.' + roomId, JSON.stringify([init]));
+    log(`Game file committed to ${git.repo} (${git.readable ? 'readable' : 'encrypted'}).`, 'ok');
+  }
   sessionStorage.setItem('chess.log.' + roomId, JSON.stringify([init]));
-  history.replaceState(null, '', `${APP_DIR}#k=${b64u.enc(secret)}&s=${key.keyId}`);
+  history.replaceState(null, '', `${APP_DIR}${fragmentFor(secret, key.keyId, git)}`);
   await joinRoom();
+}
+
+// ---------------------------------------------------------------------------- git-backed games
+const tokenKey = (repo) => 'chess.token.' + repo.toLowerCase();
+function saveToken(repo, token, remember) {
+  sessionStorage.setItem(tokenKey(repo), token);
+  if (remember) localStorage.setItem(tokenKey(repo), token); else localStorage.removeItem(tokenKey(repo));
+}
+const tokenFor = (repo) => sessionStorage.getItem(tokenKey(repo)) || localStorage.getItem(tokenKey(repo)) || '';
+// Tests point the page at a stand-in API on the page's own origin; nothing else is accepted.
+const gitApi = () => (settings.gitApi && new URL(settings.gitApi, location.href).origin === location.origin ? new URL(settings.gitApi, location.href).href : GIT_API);
+function makeStore(git, secret) {
+  return new GitStore({ repo: git.repo, branch: git.branch || 'main', path: git.path, token: tokenFor(git.repo), secret, readable: !!git.readable, api: gitApi() });
+}
+// Short, readable commit messages for a readable game; nothing about the game for an encrypted one.
+function commitMessage(events, ev, readable) {
+  if (!readable) return `chess-webCLI: event ${ev.i}`;
+  const st = S.st;
+  const name = (c) => st?.seats[c]?.name || colorName(c);
+  switch (ev.t) {
+    case 'init': return `Start: ${ev.name || 'creator'} plays ${colorName(ev.color)}${ev.tc?.days ? ` (${ev.tc.days} day${ev.tc.days > 1 ? 's' : ''} per move)` : ev.tc?.base ? ` (${ev.tc.base / 60000}+${ev.tc.inc / 1000})` : ''}`;
+    case 'seat': case 'claim': return `${ev.name || 'Someone'} takes ${colorName(ev.color)}`;
+    case 'move': {
+      const h = st.game.history(), m = h.at(-1);
+      const start = Number(st.startFen.split(' ')[5]), blackFirst = st.startFen.split(' ')[1] === 'b';
+      const ply = h.length - 1 + (blackFirst ? 1 : 0);
+      const num = start + Math.floor(ply / 2);
+      return `${num}.${ply % 2 ? '..' : ''} ${m.san} (${name(ev.by)})${st.result ? ` — ${st.result.result}, ${st.result.reason}` : ''}`;
+    }
+    case 'offer': return `${name(ev.by)} offers ${ev.kind === 'draw' ? 'a draw' : ev.kind === 'rematch' ? 'a rematch' : 'a takeback'}`;
+    case 'reply': return `${name(ev.by)} ${ev.accept ? 'accepts' : 'declines'} the ${ev.kind}${st.result ? ` — ${st.result.result}` : ''}`;
+    case 'resign': return `${name(ev.by)} resigns — ${st.result?.result || ''}`;
+    case 'flag': return `${colorName(ev.color)} ran out of time — ${st.result?.result || ''}`;
+    default: return `event ${ev.i}`;
+  }
+}
+// Write our log to the repo. On a conflict, load theirs, settle the two the same way peers do, and retry.
+async function gitPush() {
+  if (!S.git) return;
+  if (!S.git.token) { S.gitStatus = 'Not saved to the repo: no token. Add one with /token.'; renderStatus(); return; }
+  S.gitPushWanted = true;
+  if (S.gitBusy) return;
+  S.gitBusy = true;
+  try {
+    for (let attempt = 0; attempt < 4 && S.gitPushWanted; attempt++) {
+      S.gitPushWanted = false;
+      const events = S.log;
+      try {
+        await S.git.save(events, commitMessage(events, events.at(-1), S.git.readable), { pgn: S.st ? pgnOf(S.st) : '' });
+        S.gitLastSync = Date.now(); S.gitError = ''; S.gitStatus = '';
+        S.gitRemoteLen = events.length;
+      } catch (e) {
+        if (!e.conflict) throw e;
+        const r = await S.git.load();
+        if (r.events) await takeRemote(r.events); // sets gitPushWanted again if ours should still be written
+      }
+    }
+  } catch (e) { S.gitError = e.message; log(`Not saved to ${S.git.repo}: ${e.message}`, 'err'); }
+  finally { S.gitBusy = false; renderStatus(); }
+}
+// A log loaded from the repo: check it like any peer's log, then keep the right one.
+async function takeRemote(events) {
+  S.gitRemoteLen = events.length;
+  if (!events.length) { if (S.log.length) S.gitPushWanted = true; return; }
+  const st = await replay(events, replayOpts());
+  if (!st.ok) { warnOnce(`The game file in ${S.git.repo} fails the checks (event ${st.at}: ${st.error}). It was ignored; your copy will be written back.`); S.gitPushWanted = true; return; }
+  if (futureDated(events)) { warnOnce(`The game file in ${S.git.repo} has an event dated in the future by this device's clock. It was ignored.`); return; }
+  if (!S.log.length) { await setLog(events, st, 'git'); return; }
+  const c = await choose(S.log, events);
+  if (c.pick === 'theirs') {
+    if (c.why === 'fork') log(`Someone else's ${events[c.k].t} reached the repo at the same time as yours; every copy keeps theirs.`, 'err');
+    await setLog(events, st, 'git');
+    if (S.mode === 'room') broadcast('log', { events });
+  } else if (c.why !== 'same') S.gitPushWanted = true;
+}
+async function gitSync({ quiet = true } = {}) {
+  if (!S.git || S.gitBusy) return;
+  S.gitBusy = true;
+  try {
+    const r = await S.git.load();
+    S.gitLastSync = Date.now(); S.gitError = '';
+    if (r.events) await takeRemote(r.events);
+    if (!quiet) log(`Synced with ${S.git.repo}.`, 'ok');
+  } catch (e) { S.gitError = e.message; if (!quiet) log(`Could not sync: ${e.message}`, 'err'); }
+  finally { S.gitBusy = false; }
+  if (S.gitPushWanted && S.git.token) gitPush();
+  renderStatus();
+}
+function startGitPolling() {
+  clearInterval(S.gitPoll);
+  S.gitPoll = setInterval(() => { if (document.visibilityState === 'visible') gitSync(); }, S.git?.token ? GIT_POLL_MS.token : GIT_POLL_MS.anon);
+}
+const futureDated = (events) => events.some((e) => Number.isFinite(e.at) && e.at > Date.now() + FUTURE_SLACK_MS);
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.git) gitSync(); });
+
+// The list of git-backed games kept on this device.
+const gamesIndex = () => { try { return JSON.parse(localStorage.getItem('chess.games') || '[]'); } catch { return []; } };
+function summarize(st, myKeyId) {
+  const me = st ? ['w', 'b'].find((c) => st.seats[c]?.keyId === myKeyId) || null : null;
+  const seated = st && st.seats.w && st.seats.b;
+  const title = st ? `${st.seats.w?.name || 'open seat'} – ${st.seats.b?.name || 'open seat'}` : 'Game';
+  const state = !st ? '' : st.result ? `${st.result.result}, ${st.result.reason}` : !seated ? 'waiting for an opponent' : me && st.game.turn === me ? 'your move' : `${colorName(st.game.turn)} to move`;
+  return { title, state, moves: st?.game.ply() || 0, deadline: st?.deadline || null, myTurn: !!(me && st && !st.result && seated && st.game.turn === me) };
+}
+// On the start screen: look at each kept game in its repo, so the list says whose move it is.
+let gamesRefreshed = 0;
+async function refreshGames() {
+  if (Date.now() - gamesRefreshed < 30e3) return;
+  gamesRefreshed = Date.now();
+  for (const g of gamesIndex()) {
+    try {
+      const inv = parseInvite(g.frag);
+      if (!inv?.git) continue;
+      const { roomId } = await deriveRoom(inv.secret);
+      const path = inv.git.path || await defaultPath(inv.secret);
+      const store = makeStore({ ...inv.git, path }, inv.secret);
+      const r = await store.load();
+      if (!r.events?.length || futureDated(r.events)) continue;
+      const st = await replay(r.events, { room: roomId, anchor: inv.anchor });
+      if (!st.ok) continue;
+      const saved = JSON.parse(localStorage.getItem('chess.gkey.' + roomId) || 'null');
+      const myKeyId = saved ? await keyIdOf(saved.pub) : null;
+      const list = gamesIndex();
+      const i = list.findIndex((x) => x.roomId === g.roomId);
+      if (i < 0) continue;
+      list[i] = { ...list[i], ...summarize(st, myKeyId), checked: Date.now() };
+      localStorage.setItem('chess.games', JSON.stringify(list));
+      localStorage.setItem('chess.glog.' + roomId, JSON.stringify(r.events));
+    } catch { /* offline, no token or no access: keep what we knew */ }
+  }
+  if (!S.mode) renderGames();
+}
+function touchGame() {
+  if (!S.gitInfo || !S.roomId) return;
+  const list = gamesIndex().filter((g) => g.roomId !== S.roomId);
+  list.unshift({ roomId: S.roomId, frag: fragmentFor(S.secret, S.anchor, S.gitInfo), repo: S.gitInfo.repo, ...summarize(S.st, S.key?.keyId), updated: Date.now() });
+  localStorage.setItem('chess.games', JSON.stringify(list.slice(0, 100)));
+}
+// A seat in a git-backed game may be needed for weeks: move its key from the tab to the device.
+function keepSeatKey() {
+  const gk = 'chess.gkey.' + S.roomId;
+  if (localStorage.getItem(gk) || !S.key) return;
+  localStorage.setItem(gk, JSON.stringify({ jwk: S.key.jwk, pub: S.key.pub }));
+}
+function forgetGame(roomId) {
+  localStorage.setItem('chess.games', JSON.stringify(gamesIndex().filter((g) => g.roomId !== roomId)));
+  for (const k of ['chess.gkey.', 'chess.glog.', 'chess.key.', 'chess.log.']) { localStorage.removeItem(k + roomId); sessionStorage.removeItem(k + roomId); }
+}
+function renderGames() {
+  const list = gamesIndex();
+  $('#pane-games').classList.toggle('hidden', !list.length);
+  const box = $('#gamesList'); box.textContent = '';
+  for (const g of list) {
+    const due = g.deadline && g.myTurn ? ` · reply by ${new Date(g.deadline).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '';
+    box.append(el('div', { class: 'grow' },
+      el('div', { class: 't' }, el('b', { text: g.title }), el('span', { text: `${g.repo} · ${g.moves} moves · ${g.state}${due}` })),
+      el('button', { class: g.myTurn ? 'primary' : '', type: 'button', text: g.myTurn ? 'Your move' : 'Open', title: 'Open this game', onclick: () => { history.replaceState(null, '', APP_DIR + g.frag); joinRoom().catch((e) => showFatal(e.message)); } }),
+      el('button', { type: 'button', text: 'Remove', title: 'Forget this game on this device: its link and your seat key are deleted. The game stays in the repo, but you can no longer move in it.', onclick: async () => { if (await confirmBox('Remove this game from this device?', 'Its link and your seat key are deleted here. The game stays in the repo, but without the key you can no longer move in it.', 'Remove')) { forgetGame(g.roomId); renderGames(); } } })));
+  }
+}
+async function askToken(repo) {
+  const input = el('input', { type: 'password', autocomplete: 'off', placeholder: 'github_pat_…', id: 'askTok' });
+  const keep = el('input', { type: 'checkbox', id: 'askKeep' });
+  const v = await showScreen({ title: 'Your GitHub token', node: el('div', {},
+    el('p', { class: 'dim', text: `To move in this game, this tab needs your token for ${repo} (Contents: read and write). Without it you can still follow the game.` }), input,
+    el('label', { class: 'chk' }, keep, document.createTextNode(' Remember it on this device'))),
+    actions: [{ label: 'Just watch', value: null }, { label: 'Use token', cls: 'primary', value: 'ok' }] });
+  const token = input.value.trim();
+  return v === 'ok' && token ? { token, remember: keep.checked } : null;
+}
+async function claimSeat() {
+  if (!S.st?.claim) { log('Seats in this game are given by the room creator.', 'err'); return; }
+  const open = !S.st.seats.w ? 'w' : !S.st.seats.b ? 'b' : null;
+  if (!open) { log('Both seats are taken.', 'err'); return; }
+  if (mySeat()) { log('You already play in this game.', 'err'); return; }
+  if (S.git && !S.git.token) { log('Add a token with write access to the repo first (/token <token>), so your seat can be committed.', 'err'); return; }
+  if (await commit({ t: 'claim', color: open, pub: S.key.pub, name: myName() })) { S.autoFlipped = false; render(); log(`You play ${colorName(open)}.`, 'ok'); }
 }
 
 async function joinRoom() {
@@ -335,17 +569,36 @@ async function joinRoom() {
   S.secret = inv.secret; S.anchor = inv.anchor;
   const { roomId, password } = await deriveRoom(inv.secret);
   S.roomId = roomId;
-  S.key = await keyFor(roomId);
+  S.key = await keyFor(roomId); // kept on the device only once you hold a seat in a git-backed game
+  clearInterval(S.gitPoll); S.git = null; S.gitInfo = null; S.gitError = ''; S.gitStatus = '';
+  if (inv.git) {
+    const t = $('#gitToken').value.trim();
+    if (t) saveToken(inv.git.repo, t, $('#gitRemember').checked);
+    const path = inv.git.path || await defaultPath(inv.secret);
+    S.gitInfo = { repo: inv.git.repo, branch: inv.git.branch, path, customPath: !!inv.git.path };
+    try { S.git = makeStore(S.gitInfo, inv.secret); } catch (e) { showFatal(e.message); return; }
+  }
   S.mode = 'room'; S.autoFlipped = false; S.flipped = false; S.review = null; S.proposal = null; S.peers = new Map(); S.chat = []; S.unread = 0;
   // our own copy of the log, if this tab has been here before (a reload keeps it; Leave deletes it)
   let saved = [];
-  try { saved = JSON.parse(sessionStorage.getItem('chess.log.' + roomId) || '[]'); } catch {}
+  try { saved = JSON.parse(sessionStorage.getItem('chess.log.' + roomId) || localStorage.getItem('chess.glog.' + roomId) || '[]'); } catch {}
   const st = saved.length ? await replay(saved, replayOpts()) : null;
   S.log = st?.ok ? saved : []; S.st = st?.ok ? st : null;
   showGame();
   $('#hdrRoom').classList.remove('hidden');
-  $('#roomInfo').textContent = settings.lan ? 'LAN only' : `STUN: ${(settings.stun || DEFAULT_STUN).replace(/^stun:/, '')}`;
+  $('#roomInfo').textContent = (S.gitInfo ? `git: ${S.gitInfo.repo} · ` : '') + (settings.lan ? 'LAN only' : `STUN: ${(settings.stun || DEFAULT_STUN).replace(/^stun:/, '')}`);
   render();
+  if (S.git && !S.git.token && localStorage.getItem('chess.gkey.' + roomId)) {
+    // you play in this game, but this tab has no token: ask once, rather than failing on your first move
+    const tok = await askToken(S.gitInfo.repo);
+    if (tok) { S.git.token = tok.token; saveToken(S.gitInfo.repo, tok.token, tok.remember); }
+  }
+  if (S.git) {
+    log(`This game lives in ${S.git.repo}${S.git.token ? '' : ' (no token: you can follow it, but not move)'}. Loading it…`);
+    await gitSync({ quiet: false });
+    startGitPolling();
+    touchGame();
+  }
 
   let lib;
   try { lib = await loadVerified('trystero-nostr.js'); } catch (e) { showFatal(e.message); return; }
@@ -412,7 +665,7 @@ async function onHello(peerId, m) {
 }
 // The creator's browser seats the first verified newcomer in the open colour.
 async function maybeSeat() {
-  if (!isCreator() || !S.st) return;
+  if (!isCreator() || !S.st || S.st.claim) return; // in a git-backed game the opponent claims the seat
   const open = !S.st.seats.w ? 'w' : !S.st.seats.b ? 'b' : null;
   if (!open) return;
   const seated = new Set(['w', 'b'].map((c) => S.st.seats[c]?.keyId).filter(Boolean));
@@ -425,6 +678,7 @@ async function onLogMsg(peerId, m) {
   if (!events || !events.length) return;
   const st = await replay(events, replayOpts());
   if (!st.ok) { warnOnce(`${nameOf(peerId)} sent a game log that fails the checks (event ${st.at}: ${st.error}). It was ignored.`); return; }
+  if (futureDated(events)) { warnOnce(`${nameOf(peerId)} sent events dated in the future by this device's clock. They were ignored.`); return; }
   if (!S.log.length) { await setLog(events, st, 'peer'); log(`Received the game from ${nameOf(peerId)} (${events.length} events, all signatures and moves checked).`, 'ok'); await maybeSeat(); return; }
   const c = await choose(S.log, events);
   if (c.pick === 'theirs') {
@@ -442,6 +696,7 @@ async function onEv(peerId, m) {
     const events = [...S.log, ev];
     const st = await replay(events, replayOpts());
     if (!st.ok) { warnOnce(`Refused an event from ${nameOf(peerId)}: ${st.error}.`); return; }
+    if (futureDated([ev])) { warnOnce(`Refused an event from ${nameOf(peerId)}: it is dated in the future by this device's clock.`); return; }
     await setLog(events, st, 'peer');
     return;
   }
@@ -482,14 +737,15 @@ async function leaveRoom() {
   try { broadcast('bye', {}); } catch {}
   try { await S.room?.leave(); } catch {}
   if (S.roomId) { sessionStorage.removeItem('chess.log.' + S.roomId); sessionStorage.removeItem('chess.key.' + S.roomId); }
-  Object.assign(S, { room: null, roomId: null, secret: null, anchor: null, key: null, peers: new Map(), actions: {}, chat: [], unread: 0, selfId: null });
+  clearInterval(S.gitPoll);
+  Object.assign(S, { git: null, gitInfo: null, gitPoll: null, room: null, roomId: null, secret: null, anchor: null, key: null, peers: new Map(), actions: {}, chat: [], unread: 0, selfId: null });
   history.replaceState(null, '', APP_DIR);
   $('#hdrRoom').classList.add('hidden');
 }
 async function leaveLocal() { if (S.mode && S.mode !== 'room') sessionStorage.removeItem('chess.local'); }
 
 async function leave() {
-  if (S.mode === 'room' && mySeat() && live() && bothSeated()) {
+  if (S.mode === 'room' && mySeat() && live() && bothSeated() && !S.gitInfo) {
     if (!(await confirmBox('Leave the room?', 'Leaving deletes your seat key from this tab, so you cannot come back to this game and it cannot be finished. (Reloading the page instead keeps your seat.)', 'Leave'))) return;
   }
   await leaveRoom(); await leaveLocal();
@@ -640,6 +896,11 @@ const HELP = [
   ['/seats · /peers', 'who plays which colour; who is connected'],
   ['/chat <text>', 'message the room'],
   ['/invite · /qr', 'copy the invite link; show it as a QR code'],
+  ['/claim', 'take the open seat in a git-backed game'],
+  ['/sync', 'load the latest from the game\'s git repo now'],
+  ['/token <token> [remember]', 'set the GitHub token for this game\'s repo (remember = keep it on this device)'],
+  ['/repo', 'where this game lives, and its commit history'],
+  ['/games · /forget', 'git-backed games kept on this device; remove this one'],
   ['/ai load [model] · /ai unload · /ai status', 'the optional on-device language model'],
   ['/ai <words>', 'ask the model directly (it still only proposes a legal move)'],
   ['/sounds on|off', 'move sounds'],
@@ -685,6 +946,27 @@ async function runCommand(line) {
     case 'invite': if (S.mode === 'room') { copy(inviteUrl()); log(inviteUrl()); } else log('Not in a room.', 'err'); break;
     case 'qr': await showQr(); break;
     case 'ai': await aiCommand(arg); break;
+    case 'claim': await claimSeat(); break;
+    case 'sync': if (!S.git) log('This game is not kept in a git repo.', 'err'); else await gitSync({ quiet: false }); break;
+    case 'token': {
+      if (!S.gitInfo) { log('This game is not kept in a git repo.', 'err'); break; }
+      const [tok, keep] = rest;
+      if (!tok) { log(S.git.token ? 'A token is set for this repo.' : 'No token set. /token <token> [remember]'); break; }
+      saveToken(S.gitInfo.repo, tok, keep === 'remember');
+      S.git.token = tok; startGitPolling();
+      log(`Token set for ${S.gitInfo.repo}${keep === 'remember' ? ', kept on this device' : ', for this tab only'}.`, 'ok');
+      await gitSync({ quiet: false });
+      break;
+    }
+    case 'repo': if (!S.git) log('This game is not kept in a git repo.'); else log(`${S.git.repo} · branch ${S.git.branch} · ${S.git.path} · ${S.git.readable ? 'readable' : 'encrypted'}\nFile: ${S.git.webUrl}\nHistory: ${S.git.historyUrl}\n${S.git.requests} API requests this session.`); break;
+    case 'games': { const l = gamesIndex(); log(l.length ? l.map((g) => `${g.title} · ${g.repo} · ${g.moves} moves · ${g.state}`).join('\n') : 'No git-backed games on this device.'); break; }
+    case 'forget': {
+      if (!S.gitInfo) { log('Only git-backed games are kept on this device.', 'err'); break; }
+      if (!(await confirmBox('Remove this game from this device?', 'Its link and your seat key are deleted here. The game stays in the repo, but you can no longer move in it.', 'Remove'))) break;
+      const id = S.roomId; await leaveRoom(); forgetGame(id); S.mode = null; S.log = []; S.st = null;
+      $('#game').classList.add('hidden'); $('#landing').classList.remove('hidden'); $('#btnNew').classList.add('hidden'); initLanding();
+      break;
+    }
     case 'sounds': settings.sounds = !/off|0|no/.test(arg); saveSettings(); log(`Sounds ${settings.sounds !== false ? 'on' : 'off'}.`); break;
     case 'egress': egressReport(); break;
     case 'about': log([`chess-webCLI ${VERSION}, protocol ${PROTO}.`, ...Object.entries(PINS).map(([f, p]) => `lib/${f}  ${p.package}@${p.version}  sha256:${p.sha256.slice(0, 16)}…  (verified when loaded)`), 'Rules: js/chess.js (perft-tested). Engine: js/engine.js. Grammar: js/intent.js. Model bounds: js/ai.js. Log: js/log.js.'].join('\n')); break;
@@ -742,6 +1024,11 @@ async function loadModel(id) {
 function remaining(c) {
   const st = S.st;
   if (!st?.tc) return Infinity;
+  if (st.tc.days) {
+    // days per move: the side to move has until the deadline; the other side shows its full allowance
+    if (st.deadline && !st.result && game().turn === c) return st.deadline - Date.now();
+    return st.tc.days * 864e5;
+  }
   let t = st.clocks[c] ?? st.tc.base;
   const running = !st.result && st.moveIdx.length >= 1 && game().turn === c;
   if (running) t -= Date.now() - S.clockAt;
@@ -750,6 +1037,7 @@ function remaining(c) {
 const fmtClock = (ms) => {
   if (!Number.isFinite(ms)) return '';
   const neg = ms < 0; ms = Math.max(0, ms);
+  if (ms >= 3600e3) { const d = Math.floor(ms / 864e5), h = Math.floor((ms % 864e5) / 3600e3), m = Math.floor((ms % 3600e3) / 60e3); return d ? `${d}d ${h}h` : `${h}h ${String(m).padStart(2, '0')}m`; }
   const s = ms / 1000;
   if (s < 10) return (neg ? '-' : '') + s.toFixed(1);
   const m = Math.floor(s / 60), r = Math.floor(s % 60);
@@ -761,6 +1049,12 @@ setInterval(async () => {
   const turn = game().turn;
   const t = remaining(turn);
   if (S.flagSent || !Number.isFinite(t)) return;
+  if (S.st.tc.days) {
+    // correspondence: either player's page may record a deadline that has passed
+    const me = mySeat();
+    if (me && S.st.deadline && Date.now() >= S.st.deadline && bothSeated()) { S.flagSent = true; await commit({ t: 'flag', by: me, color: turn }); }
+    return;
+  }
   if (S.mode === 'room') {
     const me = mySeat();
     // your own browser reports your flag; your opponent's claims it after a short grace period
@@ -813,6 +1107,12 @@ function findKing(g, c) { const k = c === 'w' ? 'K' : 'k'; const b = g.board(); 
 function renderBoardMsg(g) {
   let msg = null;
   if (S.mode === 'room' && !S.st) msg = { big: 'Connecting…', sub: S.peers.size ? 'Waiting for the game from the others in the room.' : 'Waiting for someone else to join. Send the invite link.' };
+  else if (S.mode === 'room' && !bothSeated() && S.st.claim) {
+    const open = !S.st.seats.w ? 'w' : 'b';
+    msg = mySeat()
+      ? { big: 'Waiting for an opponent', sub: 'Send the invite link. Whoever opens it and presses "Take the seat" plays ' + colorName(open) + '. Neither of you needs to be online at the same time.', btn: { label: 'Copy invite link', fn: () => { copy(inviteUrl()); log('Invite link copied.'); } } }
+      : { big: `${colorName(open)} is open`, sub: S.git && !S.git.token ? 'To play, add a GitHub token with write access to the repo (/token in the console), then take the seat.' : `Take it to play ${S.st.seats[other(open)]?.name || 'the room creator'}. You can move whenever it is your turn; the game waits in the repo.`, btn: { label: `Take the seat (${colorName(open)})`, fn: () => claimSeat() } };
+  }
   else if (S.mode === 'room' && !bothSeated()) msg = { big: 'Waiting for an opponent', sub: isCreator() ? 'Send the invite link (the link icon at the top). The first person to join plays the other colour.' : 'The room creator\'s browser gives the open seat to the first person who joins. If you are watching, it already went to someone else.', btn: isCreator() ? { label: 'Copy invite link', fn: () => { copy(inviteUrl()); log('Invite link copied.'); } } : null };
   else if (S.st?.result && S.review === null) msg = { big: S.st.result.result === '1/2-1/2' ? 'Draw' : `${S.st.result.result === '1-0' ? 'White' : 'Black'} wins`, sub: S.st.result.reason[0].toUpperCase() + S.st.result.reason.slice(1) + '.' };
   const old = $('#boardMsg'); if (old) old.remove();
@@ -867,9 +1167,12 @@ function renderClocks() {
     ck.classList.remove('hidden');
     const t = remaining(c);
     ck.textContent = fmtClock(t);
-    const running = !S.st.result && S.st.moveIdx.length >= 1 && game().turn === c;
-    ck.classList.toggle('run', running && t >= 20000);
-    ck.classList.toggle('low', running && t < 20000);
+    const days = !!S.st.tc.days;
+    const running = !S.st.result && game().turn === c && (days ? !!S.st.deadline : S.st.moveIdx.length >= 1);
+    const low = days ? 6 * 3600e3 : 20000;
+    ck.classList.toggle('run', running && t >= low);
+    ck.classList.toggle('low', running && t < low);
+    ck.title = days ? (running ? `Must move by ${new Date(S.st.deadline).toLocaleString()}` : `${S.st.tc.days} day${S.st.tc.days > 1 ? 's' : ''} per move`) : '';
   }
 }
 function renderStatus() {
@@ -888,13 +1191,25 @@ function renderStatus() {
   if (S.review !== null) m = `Reviewing move ${S.review} of ${g.ply()} · ${m}`;
   main.textContent = m;
   const bits = [];
-  bits.push({ engine: `On this device vs the engine, level ${S.level} (${LEVELS[S.level].label}) · nothing leaves the device`, local: 'Pass and play on this device · nothing leaves the device', analysis: 'Analysis board · nothing leaves the device', room: `Room · game ${S.st.gameNo}${S.st.tc ? ` · ${S.st.tc.base / 60000} + ${S.st.tc.inc / 1000}` : ' · no clock'}` }[S.mode]);
+  bits.push({ engine: `On this device vs the engine, level ${S.level} (${LEVELS[S.level].label}) · nothing leaves the device`, local: 'Pass and play on this device · nothing leaves the device', analysis: 'Analysis board · nothing leaves the device', room: `Room · game ${S.st.gameNo}${S.st.tc?.days ? ` · ${S.st.tc.days} day${S.st.tc.days > 1 ? 's' : ''} per move` : S.st.tc ? ` · ${S.st.tc.base / 60000} + ${S.st.tc.inc / 1000}` : ' · no clock'}` }[S.mode]);
+  if (S.st.tc?.days && S.st.deadline && !S.st.result) bits.push(`${colorName(game().turn)} must move by ${new Date(S.st.deadline).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
   if (S.st.pending) {
     const p = S.st.pending; const who = S.st.seats[p.by]?.name || colorName(p.by);
     bits.push(`${p.by === mySeat() ? 'You offered' : `${who} offers`} ${p.kind === 'draw' ? 'a draw' : p.kind === 'rematch' ? 'a rematch' : 'a takeback'}`);
   }
   if (S.mode === 'room') bits.push(assistAllowed() ? 'engine available to you' : 'engine off for players during the game');
   sub.textContent = bits.join(' · ');
+  renderGitLine();
+}
+function renderGitLine() {
+  let line = $('#gitLine');
+  if (!S.git) { line?.remove(); return; }
+  if (!line) { line = el('div', { id: 'gitLine', class: 'sub' }); $('#status').append(line); }
+  line.textContent = '';
+  const when = S.gitLastSync ? `synced ${Math.max(0, Math.round((Date.now() - S.gitLastSync) / 60e3))} min ago` : 'not synced yet';
+  line.append(document.createTextNode(`Kept in `), el('a', { href: S.git.historyUrl, target: '_blank', rel: 'noopener noreferrer', text: S.git.repo, title: 'Open the game file\'s commit history on GitHub' }),
+    document.createTextNode(` · ${S.git.readable ? 'readable' : 'encrypted'} · ${S.gitBusy ? 'syncing…' : when}${S.git.token ? '' : ' · no token (watching only)'}`));
+  if (S.gitError || S.gitStatus) line.append(el('div', { style: 'color:var(--warn)', text: S.gitError || S.gitStatus }));
 }
 const relayLine = () => `Introductions via ${activeRelays().length} relays. If nobody arrives, check that the other person opened the same link.`;
 function renderPeople() {
@@ -1157,8 +1472,9 @@ function egressReport() {
     '  rooms: STUN              ' + (settings.lan ? 'none (LAN only)' : (settings.stun || DEFAULT_STUN).replace(/^stun:/, '')),
     '  rooms: peers             each person in the room, directly (WebRTC data channel)',
     '  model (only on Load)     ' + MODEL_HOSTS.join(', '),
+    '  git-backed games         ' + (S.git ? new URL(S.git.api).host + ` (repo ${S.git.repo})` : 'api.github.com, only for a game kept in a repo'),
     '', 'Contacted so far (from the page\'s own records):'];
-  const decl = new Set([location.host, ...activeRelays().map((u) => new URL(u).host)]);
+  const decl = new Set([location.host, ...activeRelays().map((u) => new URL(u).host), ...(S.git ? [new URL(S.git.api).host] : [])]);
   const obs = observedHosts();
   if (!obs.length) lines.push('  nothing yet');
   for (const h of obs) {
@@ -1210,6 +1526,8 @@ $('#btnJoin').onclick = () => joinRoom().catch((e) => showFatal(e.message));
 $('#btnEngine').onclick = () => { const c = $('#selLocalColor').value === 'r' ? (Math.random() < 0.5 ? 'w' : 'b') : $('#selLocalColor').value; settings.name = $('#name').value.trim().slice(0, 24); saveSettings(); startLocal('engine', { color: c, level: Number($('#selLevel').value) }); };
 $('#btnLocal').onclick = () => startLocal('local');
 $('#btnAnalysis').onclick = () => startLocal('analysis');
+$('#useGit').onchange = () => $('#gitBox').classList.toggle('hidden', !$('#useGit').checked);
+$('#selTc').onchange = () => { if ($('#selTc').value.startsWith('d') && !$('#useGit').checked) { $('#useGit').checked = true; $('#gitBox').classList.remove('hidden'); } };
 $('#btnSaveSettings').onclick = () => { settings.lan = $('#setLan').checked; settings.stun = $('#setStun').value.trim(); settings.relays = $('#setRelays').value.trim(); saveSettings(); $('#settingsNote').textContent = 'Saved for this tab.'; };
 $('#btnFlip').onclick = () => runCommand('/flip');
 $('#btnUndo').onclick = () => offerOrAccept('takeback');
@@ -1258,6 +1576,21 @@ function initLanding() {
   $('#name').value = settings.name || '';
   $('#setLan').checked = !!settings.lan; $('#setStun').value = settings.stun || DEFAULT_STUN; $('#setRelays').value = settings.relays || '';
   const inv = parseInvite();
+  renderGames();
+  refreshGames();
+  // git options: free to fill when creating; fixed by the link when joining a git-backed game
+  const g = inv?.git;
+  $('#gitSection').classList.toggle('hidden', !!inv && !g);
+  $('#useGit').checked = !!g || $('#useGit').checked;
+  $('#useGit').disabled = !!g;
+  $('#gitBox').classList.toggle('hidden', !$('#useGit').checked);
+  $('#gitRepoRow').classList.toggle('hidden', !!g);
+  $('#gitReadableLabel').classList.toggle('hidden', !!g);
+  $('#gitJoinNote').classList.toggle('hidden', !g);
+  if (g) {
+    $('#gitJoinNote').textContent = `This game lives in github.com/${g.repo}. To play, you need a GitHub token with write access to that repo (ask its owner to add you as a collaborator). To follow a public repo you need none.`;
+    $('#gitToken').value = tokenFor(g.repo);
+  }
   $('#invitedNote').classList.toggle('hidden', !inv);
   $('#btnJoin').classList.toggle('hidden', !inv);
   $('#createOpts').classList.toggle('hidden', !!inv);
