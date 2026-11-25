@@ -62,6 +62,25 @@ const APP_DIR = (() => {
 const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
 const glyph = (p) => GLYPH[p.toLowerCase()] + '︎';
 
+// ---------------------------------------------------------------------------- board themes
+// Colours only: the highlight overlays are translucent and work on all of them.
+const BOARD_THEMES = {
+  slate: { label: 'Slate', light: '#c9d3e6', dark: '#5d6f99' },
+  walnut: { label: 'Walnut', light: '#f0d9b5', dark: '#b58863' },
+  forest: { label: 'Forest', light: '#eaeed2', dark: '#769656' },
+  ice: { label: 'Ice', light: '#dee3e6', dark: '#8ca2ad' },
+  plum: { label: 'Plum', light: '#e3d3e0', dark: '#8c6e8a' },
+  coal: { label: 'Coal', light: '#9aa3b5', dark: '#434a63' },
+};
+function applyBoardTheme(name) {
+  const key = BOARD_THEMES[name] ? name : 'slate';
+  const t = BOARD_THEMES[key];
+  document.documentElement.style.setProperty('--light', t.light);
+  document.documentElement.style.setProperty('--dark', t.dark);
+  settings.board = key; saveSettings();
+  return t;
+}
+
 // ---------------------------------------------------------------------------- icons
 const ICONS = {
   flip: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
@@ -75,6 +94,7 @@ const ICONS = {
   next: '<polyline points="9 18 15 12 9 6"/>',
   last: '<polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/>',
   out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+  theme: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/>',
 };
 function setIcon(btn, name) {
   if (btn.querySelector('svg.i')) return;
@@ -83,7 +103,7 @@ function setIcon(btn, name) {
   svg.innerHTML = ICONS[name];
   btn.prepend(svg);
 }
-const CONTROL_ICONS = { btnFlip: 'flip', btnUndo: 'undo', btnDraw: 'draw', btnResign: 'flag', btnHint: 'bulb', btnAgain: 'again', btnFirst: 'first', btnPrev: 'prev', btnNext: 'next', btnLast: 'last', btnLeave: 'out' };
+const CONTROL_ICONS = { btnFlip: 'flip', btnUndo: 'undo', btnDraw: 'draw', btnResign: 'flag', btnHint: 'bulb', btnAgain: 'again', btnTheme: 'theme', btnFirst: 'first', btnPrev: 'prev', btnNext: 'next', btnLast: 'last', btnLeave: 'out' };
 for (const [id, ic] of Object.entries(CONTROL_ICONS)) setIcon($('#' + id), ic);
 
 // ---------------------------------------------------------------------------- settings (this tab only)
@@ -903,7 +923,8 @@ const HELP = [
   ['/games · /forget', 'git-backed games kept on this device; remove this one'],
   ['/ai load [model] · /ai unload · /ai status', 'the optional on-device language model'],
   ['/ai <words>', 'ask the model directly (it still only proposes a legal move)'],
-  ['/sounds on|off', 'move sounds'],
+  ['/board [theme]', 'board colours: slate, walnut, forest, ice, plum, coal'],
+  ['/sounds on|off', 'move sounds (the speaker in the header does the same)'],
   ['/egress', 'every host this page is set to contact, and the ones it has contacted'],
   ['/about', 'version, pinned libraries, protocol'],
   ['/leave', 'back to the start screen'],
@@ -967,7 +988,14 @@ async function runCommand(line) {
       $('#game').classList.add('hidden'); $('#landing').classList.remove('hidden'); $('#btnNew').classList.add('hidden'); initLanding();
       break;
     }
-    case 'sounds': settings.sounds = !/off|0|no/.test(arg); saveSettings(); log(`Sounds ${settings.sounds !== false ? 'on' : 'off'}.`); break;
+    case 'board': {
+      const k = arg.trim().toLowerCase();
+      if (!k) { log(`Board themes: ${Object.entries(BOARD_THEMES).map(([n]) => n + ((settings.board || 'slate') === n ? ' (current)' : '')).join(', ')}. /board <name> to switch.`); break; }
+      if (!BOARD_THEMES[k]) { log(`No board theme "${k}". Themes: ${Object.keys(BOARD_THEMES).join(', ')}.`, 'err'); break; }
+      log(`Board: ${applyBoardTheme(k).label}.`, 'ok');
+      break;
+    }
+    case 'sounds': settings.sounds = !/off|0|no/.test(arg); saveSettings(); updateMuteBtn(); if (settings.sounds !== false) sound('move'); log(`Sounds ${settings.sounds !== false ? 'on' : 'off'}.`); break;
     case 'egress': egressReport(); break;
     case 'about': log([`chess-webCLI ${VERSION}, protocol ${PROTO}.`, ...Object.entries(PINS).map(([f, p]) => `lib/${f}  ${p.package}@${p.version}  sha256:${p.sha256.slice(0, 16)}…  (verified when loaded)`), 'Rules: js/chess.js (perft-tested). Engine: js/engine.js. Grammar: js/intent.js. Model bounds: js/ai.js. Log: js/log.js.'].join('\n')); break;
     case 'leave': await leave(); break;
@@ -1276,6 +1304,7 @@ function renderControls() {
   set('btnResign', { label: 'Resign', title: 'Resign the game (asks first)', disabled: !playing, hidden: S.mode === 'analysis' });
   set('btnHint', { label: 'Hint', title: assistAllowed() ? 'Ask the local engine for a move (it runs on this device)' : 'Off for players during a live room game', disabled: !S.st || !assistAllowed() });
   set('btnAgain', { label: room ? (offered('rematch') ? 'Accept rematch' : 'Rematch') : 'New game', title: room ? 'Offer a new game with colours swapped' : 'Start a new game in this mode', disabled: room ? !(S.st?.result && me) : !S.st, cls: offered('rematch') ? 'on' : '' });
+  set('btnTheme', { label: 'Board', title: 'Board colours (also /board)' });
   const n = S.st?.game.ply() || 0, cur = S.review === null ? n : S.review;
   set('btnFirst', { title: 'Go to the start (Home)', disabled: !n || cur === 0 });
   set('btnPrev', { title: 'Previous move (←)', disabled: !n || cur === 0 });
@@ -1362,10 +1391,12 @@ boardEl.addEventListener('pointerdown', (e) => {
   if (S.sel && S.sel !== name && g.moves({ square: S.sel }).some((m) => m.to === name)) { tryMove(S.sel, name); return; }
   if (p && canMoveNow() && (p === p.toUpperCase() ? 'w' : 'b') === g.turn) {
     S.sel = name; S.hint = null; renderBoard();
+    sound('pickup');
     const pc = boardEl.querySelector(`[data-sq="${name}"] .pc`);
     if (pc) {
-      const size = sq.getBoundingClientRect().height;
-      drag = { from: name, ghost: el('span', { id: 'drag', class: pc.className, text: pc.textContent, style: `font-size:${size * 0.82}px;left:${e.clientX}px;top:${e.clientY}px` }), moved: false, x: e.clientX, y: e.clientY };
+      // measure the fresh square: renderBoard() above replaced the one the event landed on
+      const size = pc.closest('.sq').getBoundingClientRect().height;
+      drag = { from: name, legal: new Set(g.moves({ square: name }).map((m) => m.to)), overEl: null, ghost: el('span', { id: 'drag', class: pc.className, text: pc.textContent, style: `font-size:${size * 0.82}px;left:${e.clientX}px;top:${e.clientY}px` }), moved: false, x: e.clientX, y: e.clientY };
       boardEl.setPointerCapture(e.pointerId);
     }
   } else if (S.sel) { S.sel = null; renderBoard(); }
@@ -1375,27 +1406,39 @@ boardEl.addEventListener('pointermove', (e) => {
   if (!drag) return;
   if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) {
     drag.moved = true; document.body.append(drag.ghost);
+    boardEl.classList.add('dragging');
     boardEl.querySelector(`[data-sq="${drag.from}"] .pc`)?.classList.add('ghost');
   }
-  if (drag.moved) { drag.ghost.style.left = e.clientX + 'px'; drag.ghost.style.top = e.clientY + 'px'; }
+  if (drag.moved) {
+    drag.ghost.style.left = e.clientX + 'px'; drag.ghost.style.top = e.clientY + 'px';
+    // outline the square under the pointer: bright when the drop is legal, faint when it is not
+    const t = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.sq');
+    if (t !== drag.overEl) {
+      drag.overEl?.classList.remove('over', 'illegal');
+      drag.overEl = t && t.dataset.sq !== drag.from ? t : null;
+      if (drag.overEl) { drag.overEl.classList.add('over'); if (!drag.legal.has(drag.overEl.dataset.sq)) drag.overEl.classList.add('illegal'); }
+    }
+  }
 });
 const endDrag = (e) => {
   if (!drag) return;
   const d = drag; drag = null;
   d.ghost.remove();
+  d.overEl?.classList.remove('over', 'illegal');
+  boardEl.classList.remove('dragging');
   if (!d.moved) return;
   const target = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.sq');
   if (target && target.dataset.sq !== d.from) tryMove(d.from, target.dataset.sq);
   else renderBoard();
 };
 boardEl.addEventListener('pointerup', endDrag);
-boardEl.addEventListener('pointercancel', () => { if (drag) { drag.ghost.remove(); drag = null; renderBoard(); } });
+boardEl.addEventListener('pointercancel', () => { if (drag) { drag.ghost.remove(); drag.overEl?.classList.remove('over', 'illegal'); boardEl.classList.remove('dragging'); drag = null; renderBoard(); } });
 
 async function tryMove(from, to) {
   S.sel = null;
   const g = boardGame();
   const cands = g.moves({ square: from }).filter((m) => m.to === to);
-  if (!cands.length) { renderBoard(); return; }
+  if (!cands.length) { sound('illegal'); renderBoard(); return; }
   let m = cands[0];
   if (cands.length > 1) { const promo = await pickPromotion(g.turn); if (!promo) { renderBoard(); return; } m = cands.find((x) => x.promotion.toLowerCase() === promo); }
   await playMove(m);
@@ -1461,6 +1504,28 @@ async function showQr() {
   showScreen({ title: 'Invite QR', node: el('div', {}, canvas, el('p', { class: 'dim mono', text: url, style: 'word-break:break-all' }), el('p', { class: 'dim', text: 'Anyone who scans this can join: the first takes the open seat, everyone after watches.' })) });
 }
 function showFatal(text) { const f = $('#fatal'); f.textContent = text; f.classList.remove('hidden'); log(text, 'err'); }
+// Board colours: swatches in a dialog; /board does the same from the console.
+function showThemeDialog() {
+  const grid = el('div', { class: 'themes' });
+  const make = (k, t) => el('button', { type: 'button', class: 'theme' + ((settings.board || 'slate') === k ? ' cur' : ''), title: `Use the ${t.label} board colours`, onclick: () => { applyBoardTheme(k); for (const b of grid.children) b.classList.toggle('cur', b.dataset.k === k); log(`Board: ${t.label}.`, 'ok'); }, 'data-k': k },
+    el('span', { class: 'swatch', 'aria-hidden': 'true' },
+      el('i', { style: `background:${t.light}` }), el('i', { style: `background:${t.dark}` }),
+      el('i', { style: `background:${t.dark}` }), el('i', { style: `background:${t.light}` })),
+    el('span', { text: t.label }));
+  for (const [k, t] of Object.entries(BOARD_THEMES)) grid.append(make(k, t));
+  showScreen({ title: 'Board colours', node: el('div', {}, grid, el('p', { class: 'dim', style: 'margin:10px 0 0', text: 'Kept until this tab is closed. The console command is /board.' })), actions: [{ label: 'Done', cls: 'primary' }] });
+}
+// The speaker in the header mirrors /sounds.
+function updateMuteBtn() {
+  const on = settings.sounds !== false;
+  const b = $('#btnMute');
+  $('#icoSoundOn').classList.toggle('hidden', !on);
+  $('#icoSoundOff').classList.toggle('hidden', on);
+  b.setAttribute('aria-pressed', String(!on));
+  const t = on ? 'Mute move sounds' : 'Sounds are muted. Press to turn them back on';
+  if (b.dataset.tip) b.dataset.tip = t; else b.setAttribute('title', t);
+  b.setAttribute('aria-label', t);
+}
 async function copy(text) {
   try { await navigator.clipboard.writeText(text); return true; }
   catch { const ta = el('textarea', {}); ta.value = text; document.body.append(ta); ta.select(); try { document.execCommand('copy'); } catch {} ta.remove(); return false; }
@@ -1493,11 +1558,16 @@ function sound(kind) {
   try {
     actx = actx || new AudioContext();
     const now = actx.currentTime;
-    const tones = { move: [[520, 0, 0.05]], capture: [[360, 0, 0.07], [260, 0.05, 0.08]], check: [[700, 0, 0.06], [880, 0.07, 0.08]], end: [[523, 0, 0.12], [659, 0.12, 0.12], [784, 0.24, 0.2]], offer: [[660, 0, 0.08], [660, 0.14, 0.08]], chat: [[880, 0, 0.05]] }[kind] || [];
-    for (const [f, t, d] of tones) {
+    // [frequency, start, duration, gain]; the quiet ones are UI feedback, the louder ones are game events
+    const tones = {
+      move: [[520, 0, 0.05]], capture: [[360, 0, 0.07], [260, 0.05, 0.08]], check: [[700, 0, 0.06], [880, 0.07, 0.08]],
+      end: [[523, 0, 0.12], [659, 0.12, 0.12], [784, 0.24, 0.2]], offer: [[660, 0, 0.08], [660, 0.14, 0.08]], chat: [[880, 0, 0.05]],
+      pickup: [[600, 0, 0.025, 0.05]], illegal: [[150, 0, 0.08, 0.1], [110, 0.04, 0.1, 0.08]],
+    }[kind] || [];
+    for (const [f, t, d, g = 0.12] of tones) {
       const o = actx.createOscillator(), gn = actx.createGain();
       o.frequency.value = f; o.type = 'triangle';
-      gn.gain.setValueAtTime(0.0001, now + t); gn.gain.exponentialRampToValueAtTime(0.12, now + t + 0.01); gn.gain.exponentialRampToValueAtTime(0.0001, now + t + d);
+      gn.gain.setValueAtTime(0.0001, now + t); gn.gain.exponentialRampToValueAtTime(g, now + t + 0.01); gn.gain.exponentialRampToValueAtTime(0.0001, now + t + d);
       o.connect(gn).connect(actx.destination); o.start(now + t); o.stop(now + t + d + 0.02);
     }
   } catch {}
@@ -1544,6 +1614,8 @@ $('#btnNew').onclick = () => leave();
 $('#brand').onclick = (e) => { if (S.mode) { e.preventDefault(); leave(); } };
 $('#btnInvite').onclick = async () => { await copy(inviteUrl()); log('Invite link copied. The first person to open it takes the open seat; anyone after watches.', 'ok'); };
 $('#btnQr').onclick = () => showQr();
+$('#btnMute').onclick = () => runCommand('/sounds ' + (settings.sounds === false ? 'on' : 'off'));
+$('#btnTheme').onclick = () => showThemeDialog();
 $('#btnPgn').onclick = async () => { if (S.st) { await copy(pgnOf(S.st)); log('PGN copied.', 'ok'); } };
 $('#btnFen').onclick = async () => { await copy(boardGame().fen()); log('FEN copied: ' + boardGame().fen(), 'ok'); };
 $('#btnLoad').onclick = () => openLoadDialog();
@@ -1614,6 +1686,8 @@ if ('serviceWorker' in navigator && window.isSecureContext && !new URLSearchPara
 
 // Resume after a reload: an open room invite is joined only when the user presses Join; an on-device
 // game in this tab is restored at once.
+applyBoardTheme(settings.board);
+updateMuteBtn();
 initLanding();
 (async () => {
   const inv = parseInvite();

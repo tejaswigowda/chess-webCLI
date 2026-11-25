@@ -66,8 +66,10 @@
   svg.i { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
   .cbtn { display:inline-flex; align-items:center; gap:6px; position:relative; }
 
-  /* ---- landing ---- */
-  #landing { max-width:720px; width:100%; margin:0 auto; padding:32px 16px 64px; flex:1; overflow:auto; }
+  /* ---- landing (the family's two-column entry scene on big screens) ---- */
+  #landing { max-width:1160px; width:100%; margin:0 auto; padding:32px 24px 64px; flex:1; overflow:auto; }
+  #landing .lgrid { display:grid; grid-template-columns:1fr 1fr; gap:0 18px; align-items:start; }
+  @media (max-width:940px) { #landing { max-width:720px; padding:32px 16px 64px; } #landing .lgrid { grid-template-columns:1fr; } }
   #landing h1 { margin:0 0 4px; font-size:26px; }
   #landing .sub { margin:0 0 20px; color:var(--dim); }
   #landing .card { margin-bottom:16px; }
@@ -115,7 +117,13 @@
   .pc.w { color:#fbfdff; text-shadow:0 0 1px #0d0f1a,0 0 1px #0d0f1a,1px 1px 0 #0d0f1a,-1px -1px 0 #0d0f1a,1px -1px 0 #0d0f1a,-1px 1px 0 #0d0f1a,0 2px 3px rgba(0,0,0,.35); }
   .pc.b { color:#141726; text-shadow:0 0 1px #e2e8f0,1px 1px 0 rgba(226,232,240,.55),-1px -1px 0 rgba(226,232,240,.55),0 2px 3px rgba(0,0,0,.35); }
   .pc.ghost { opacity:.25; }
-  #drag { position:fixed; z-index:60; pointer-events:none; line-height:1; transform:translate(-50%,-55%); }
+  /* feedback while a piece is being dragged */
+  #board.dragging, #board.dragging .pc { cursor:grabbing; }
+  .sq.over { outline:3px solid var(--acc-h); outline-offset:-3px; z-index:4; }
+  .sq.over.illegal { outline-color:rgba(226,232,240,.3); }
+  .sq.over .dotm { width:40%; height:40%; background:rgba(13,15,26,.5); }
+  .sq.over .ring { border-width:7px; border-color:rgba(13,15,26,.5); }
+  #drag { position:fixed; z-index:60; pointer-events:none; line-height:1; transform:translate(-50%,-58%) scale(1.12); filter:drop-shadow(0 7px 10px rgba(0,0,0,.55)); }
   #boardMsg { position:absolute; inset:0; z-index:5; display:flex; align-items:center; justify-content:center; pointer-events:none; }
   #boardMsg > div { background:rgba(13,15,26,.86); border:1px solid var(--line); border-radius:10px; padding:14px 18px; max-width:80%; text-align:center; pointer-events:auto; }
   #boardMsg .big { font-size:20px; font-weight:700; margin-bottom:4px; }
@@ -173,6 +181,11 @@
   #qrCanvas { background:#fff; padding:8px; border-radius:6px; image-rendering:pixelated; width:240px; height:240px; display:block; margin:8px auto; }
   .promo { display:flex; gap:8px; justify-content:center; }
   .promo button { font-size:44px; width:72px; height:72px; padding:0; background:var(--light); }
+  .themes { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+  .theme { display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 8px; }
+  .theme.cur { border-color:var(--acc-h); box-shadow:0 0 0 1px var(--acc-h); }
+  .theme .swatch { display:grid; grid-template-columns:1fr 1fr; width:56px; height:56px; border-radius:6px; overflow:hidden; box-shadow:0 2px 6px rgba(0,0,0,.4); }
+  .theme .swatch i { display:block; }
   #tip { position:fixed; z-index:200; max-width:260px; padding:6px 10px; background:var(--surface3); color:var(--fg); border:1px solid var(--line); border-radius:6px; font-size:12px; line-height:1.35; pointer-events:none; opacity:0; visibility:hidden; transition:opacity .12s; box-shadow:0 4px 14px rgba(0,0,0,.45); }
   #tip.show { opacity:1; visibility:visible; }
 
@@ -217,6 +230,10 @@
     <button id="btnQr" class="header-icon" type="button" title="Show the invite as a QR code" aria-label="Show invite QR code"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></button>
   </div>
   <nav class="help-nav" aria-label="Help">
+    <button id="btnMute" class="header-icon" type="button" title="Mute move sounds" aria-label="Mute move sounds" aria-pressed="false">
+      <svg class="i" id="icoSoundOn" viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      <svg class="i hidden" id="icoSoundOff" viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+    </button>
     <button id="btnInstall" class="header-icon hidden" type="button" title="Install chess webCLI as an app on this device (it then opens offline)" aria-label="Install as an app"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
     <button id="btnNew" class="header-icon hidden" type="button" title="Back to the start screen" aria-label="Back to the start screen"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
     <a href="about/" class="header-icon" id="navAbout" title="How it works" aria-label="How it works"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></a>
@@ -232,6 +249,8 @@
   <div id="offlineNote" class="banner warn hidden">You are offline. Games on this device work. A room needs a connection to reach the introduction servers.</div>
   <div id="fatal" class="banner bad hidden"></div>
 
+  <div class="lgrid">
+  <div class="lcol">
   <div class="card" id="pane-room">
     <h2>Play a friend</h2>
     <div id="invitedNote" class="banner info hidden">You opened an invite link. Nothing is sent anywhere until you join.</div>
@@ -274,7 +293,9 @@
       <div class="row"><button id="btnSaveSettings" title="Use these network settings until this tab is closed">Save settings</button><span class="dim" id="settingsNote"></span></div>
     </details>
   </div>
+  </div>
 
+  <div class="lcol">
   <div class="card" id="pane-local">
     <h2>Play on this device</h2>
     <p class="dim" style="margin:0">Zero egress: nothing leaves this device. Works offline.</p>
@@ -305,6 +326,8 @@
       <li>A room exists only while someone is in it. Nothing is stored anywhere but this tab.</li>
     </ul>
   </div>
+  </div>
+  </div>
 </div>
 
 <div id="game" class="hidden">
@@ -325,6 +348,7 @@
         <button id="btnResign" class="cbtn" type="button"><span class="lbl">Resign</span></button>
         <button id="btnHint" class="cbtn" type="button"><span class="lbl">Hint</span></button>
         <button id="btnAgain" class="cbtn" type="button"><span class="lbl">Rematch</span></button>
+        <button id="btnTheme" class="cbtn" type="button"><span class="lbl">Board</span></button>
         <span class="sep"></span>
         <button id="btnFirst" class="cbtn" type="button"><span class="lbl"></span></button>
         <button id="btnPrev" class="cbtn" type="button"><span class="lbl"></span></button>

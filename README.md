@@ -49,9 +49,9 @@ On-device games are zero-egress. Rooms cannot be, because moves have to reach th
 - **Type your moves**: notation (`e4`, `Nxe5`, `O-O`, `e7e8q`) plays at once; plain words ("knight to f3", "take the queen", "castle long", "kingside knight out", "bishop blocks on d2") go through a fixed grammar that can only return legal moves, and are proposed for you to confirm. Several matches become buttons.
 - **Bounded on-device AI (optional)**: see below.
 - **Engine off for players in a live room game**: hints and evaluation are offered to watchers, to games on your device, and to everyone after the game.
-- **Console with GUI parity**: `/move`, `/flip`, `/takeback`, `/draw`, `/accept`, `/decline`, `/resign`, `/rematch`, `/new`, `/hint`, `/eval`, `/level`, `/describe`, `/fen`, `/pgn`, `/load`, `/first` `/prev` `/next` `/last`, `/seats`, `/peers`, `/chat`, `/invite`, `/qr`, `/ai`, `/sounds`, `/egress`, `/about`, `/leave`.
+- **Console with GUI parity**: `/move`, `/flip`, `/takeback`, `/draw`, `/accept`, `/decline`, `/resign`, `/rematch`, `/new`, `/hint`, `/eval`, `/level`, `/describe`, `/fen`, `/pgn`, `/load`, `/first` `/prev` `/next` `/last`, `/seats`, `/peers`, `/chat`, `/invite`, `/qr`, `/ai`, `/board`, `/sounds`, `/egress`, `/about`, `/leave`.
 - **Verified libraries**: Trystero and the QR generator (the same builds rtc-webCLI pins) and WebLLM are vendored in `docs/lib/`; the page checks each file's SHA-256 against `js/app.js` and refuses to run on a mismatch.
-- **Installable, opens offline (PWA)**, works on a phone (tested at 390 px wide), tooltips on every control, generated move sounds (no audio files).
+- **Installable, opens offline (PWA)**, works on a phone (tested at 390 px wide), tooltips on every control, board colour themes (`/board` or the Board button), generated move sounds (no audio files) with a mute button in the header.
 
 <p align="center"><img src="docs/img/phone.png" alt="The phone layout, against the computer" width="300"></p>
 
