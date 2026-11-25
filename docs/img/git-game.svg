@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 360" role="img" aria-labelledby="t d" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+  <title id="t">A game kept in a git repo</title>
+  <desc id="d">Each browser commits its signed events to one file in a repo and polls it for the other side's. Both replay and signature-check whatever they load. Nobody has to be online at the same time.</desc>
+  <defs>
+    <marker id="gg-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#58a6ff"/></marker>
+    <marker id="gg-y" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d29922"/></marker>
+  </defs>
+  <rect width="900" height="360" fill="#0d0f1a"/>
+  <text x="450" y="34" text-anchor="middle" fill="#e6edf3" font-size="18" font-weight="600">Slow games: the repo carries the log, it never referees it</text>
+
+  <rect x="330" y="62" width="240" height="112" rx="12" fill="#151827" stroke="#a371f7" stroke-width="2"/>
+  <text x="450" y="88" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="600">github.com/ann/games</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" fill="#8b949e">
+    <text x="450" y="112" text-anchor="middle">chess-webCLI/9f2c….json</text>
+    <text x="450" y="132" text-anchor="middle">encrypted by default</text>
+    <text x="450" y="152" text-anchor="middle">one commit per event</text>
+  </g>
+
+  <rect x="40" y="210" width="250" height="100" rx="12" fill="#1e2236" stroke="#58a6ff" stroke-width="2"/>
+  <text x="165" y="238" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="600">Ann — Tuesday, 9 am</text>
+  <text x="165" y="262" text-anchor="middle" fill="#8b949e" font-size="13">loads the file, replays it,</text>
+  <text x="165" y="280" text-anchor="middle" fill="#8b949e" font-size="13">checks every signature,</text>
+  <text x="165" y="298" text-anchor="middle" fill="#8b949e" font-size="13">then commits her signed move</text>
+
+  <rect x="610" y="210" width="250" height="100" rx="12" fill="#1e2236" stroke="#d29922" stroke-width="2"/>
+  <text x="735" y="238" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="600">Bob — Wednesday, 11 pm</text>
+  <text x="735" y="262" text-anchor="middle" fill="#8b949e" font-size="13">his page polls the file, replays</text>
+  <text x="735" y="280" text-anchor="middle" fill="#8b949e" font-size="13">and checks it the same way,</text>
+  <text x="735" y="298" text-anchor="middle" fill="#8b949e" font-size="13">then commits his reply</text>
+
+  <path d="M200 210 C 240 170, 290 140, 326 120" fill="none" stroke="#58a6ff" stroke-width="2.5" marker-end="url(#gg-b)"/>
+  <text x="252" y="150" text-anchor="end" fill="#58a6ff" font-size="13">commit "event 12"</text>
+  <path d="M574 120 C 620 142, 670 172, 702 210" fill="none" stroke="#d29922" stroke-width="2.5" marker-end="url(#gg-y)"/>
+  <text x="660" y="150" fill="#d29922" font-size="13">poll, load, verify</text>
+
+  <text x="450" y="336" text-anchor="middle" fill="#8b949e" font-size="13">GitHub, or anyone with write access, can delete or roll back the file — but cannot forge or alter a move:</text>
+  <text x="450" y="354" text-anchor="middle" fill="#8b949e" font-size="13">a bad file fails the checks, is refused, and the page writes its own longer copy back</text>
+</svg>

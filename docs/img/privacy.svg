@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" role="img" aria-labelledby="t d" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+  <title id="t">What each party can see</title>
+  <desc id="d">The people in the room, the introduction relays, the STUN server, the page host and GitHub each see different things, and none of them can forge a move.</desc>
+  <rect width="900" height="430" fill="#0d0f1a"/>
+  <g font-size="14" font-weight="600" text-anchor="middle" fill="#e6edf3">
+    <rect x="14" y="20" width="164" height="390" rx="12" fill="#151827" stroke="#3fb950" stroke-width="2"/><text x="96" y="48">People in</text><text x="96" y="66">the room</text>
+    <rect x="192" y="20" width="164" height="390" rx="12" fill="#151827" stroke="#d29922" stroke-width="2"/><text x="274" y="48">Introduction</text><text x="274" y="66">relays</text>
+    <rect x="370" y="20" width="164" height="390" rx="12" fill="#151827" stroke="#58a6ff" stroke-width="2"/><text x="452" y="48">STUN</text><text x="452" y="66">server</text>
+    <rect x="548" y="20" width="164" height="390" rx="12" fill="#151827" stroke="#8b949e" stroke-width="2"/><text x="630" y="48">Page</text><text x="630" y="66">host</text>
+    <rect x="726" y="20" width="160" height="390" rx="12" fill="#151827" stroke="#a371f7" stroke-width="2"/><text x="806" y="48">GitHub</text><text x="806" y="66">(git games)</text>
+  </g>
+  <g font-size="12.5" fill="#e6edf3">
+    <text x="28" y="98" fill="#3fb950" font-weight="600">sees</text>
+    <text x="28" y="118">your moves and chat</text>
+    <text x="28" y="136">your IP address</text>
+    <text x="28" y="154">your name, as typed</text>
+    <text x="28" y="190" fill="#f85149" font-weight="600">cannot</text>
+    <text x="28" y="210">move for you</text>
+    <text x="28" y="228">make an illegal move</text>
+    <text x="28" y="246">consent on your behalf</text>
+    <text x="28" y="282" fill="#8b949e">every event they send</text>
+    <text x="28" y="298" fill="#8b949e">you is checked; every</text>
+    <text x="28" y="314" fill="#8b949e">event you send is signed</text>
+
+    <text x="206" y="98" fill="#d29922" font-weight="600">sees</text>
+    <text x="206" y="118">your IP address</text>
+    <text x="206" y="136">a room-topic hash</text>
+    <text x="206" y="154">who meets, and when</text>
+    <text x="206" y="172">encrypted offers</text>
+    <text x="206" y="208" fill="#f85149" font-weight="600">does not see</text>
+    <text x="206" y="228">the invite secret</text>
+    <text x="206" y="246">any move or chat</text>
+    <text x="206" y="264">readable offers</text>
+
+    <text x="384" y="98" fill="#58a6ff" font-weight="600">sees</text>
+    <text x="384" y="118">your IP address</text>
+    <text x="384" y="154" fill="#f85149" font-weight="600">does not see</text>
+    <text x="384" y="174">the room</text>
+    <text x="384" y="192">any move</text>
+    <text x="384" y="228" fill="#8b949e">turn on "LAN only"</text>
+    <text x="384" y="244" fill="#8b949e">and it sees nothing</text>
+
+    <text x="562" y="98" fill="#8b949e" font-weight="600">sees</text>
+    <text x="562" y="118">that you loaded</text>
+    <text x="562" y="136">the app</text>
+    <text x="562" y="172" fill="#f85149" font-weight="600">does not see</text>
+    <text x="562" y="192">the secret (after #)</text>
+    <text x="562" y="210">the room</text>
+    <text x="562" y="228">any move</text>
+    <text x="562" y="264" fill="#8b949e">it serves the code, so</text>
+    <text x="562" y="280" fill="#8b949e">trust it as you would</text>
+    <text x="562" y="296" fill="#8b949e">any site you load</text>
+    <text x="562" y="312" fill="#8b949e">code from</text>
+
+    <text x="740" y="98" fill="#a371f7" font-weight="600">sees</text>
+    <text x="740" y="118">your token and IP</text>
+    <text x="740" y="136">when each side moves</text>
+    <text x="740" y="154">the game file —</text>
+    <text x="740" y="172">encrypted, unless you</text>
+    <text x="740" y="190">chose "readable"</text>
+    <text x="740" y="226" fill="#f85149" font-weight="600">cannot</text>
+    <text x="740" y="246">forge or alter a move</text>
+    <text x="740" y="282" fill="#8b949e">it can delete or roll</text>
+    <text x="740" y="298" fill="#8b949e">back the file; the page</text>
+    <text x="740" y="314" fill="#8b949e">keeps its own copy and</text>
+    <text x="740" y="330" fill="#8b949e">writes it back</text>
+  </g>
+</svg>

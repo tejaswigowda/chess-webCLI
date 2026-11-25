@@ -27,6 +27,9 @@
   .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:12px 0; }
   .dim { color:var(--dim); }
   .tag { display:inline-block; font-size:12px; padding:0 8px; border-radius:10px; border:1px solid var(--line); }
+  figure { margin:18px 0; }
+  figure img { width:100%; display:block; border:1px solid var(--line); border-radius:10px; background:var(--bg); }
+  figcaption { color:var(--dim); font-size:14px; margin-top:6px; }
   svg text { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
 </style>
 </head>
@@ -53,15 +56,10 @@
 </table>
 
 <h2 id="room">A room</h2>
-<svg viewBox="0 0 760 210" width="100%" role="img" aria-label="Two players and a watcher connected directly; relays only introduce them">
-  <rect x="10" y="70" width="170" height="70" rx="10" fill="#151827" stroke="#3665b6"/><text x="95" y="100" fill="#e2e8f0" text-anchor="middle" font-size="15">Ann (White)</text><text x="95" y="122" fill="#94a3b8" text-anchor="middle" font-size="12">room creator</text>
-  <rect x="580" y="70" width="170" height="70" rx="10" fill="#151827" stroke="#3665b6"/><text x="665" y="100" fill="#e2e8f0" text-anchor="middle" font-size="15">Bob (Black)</text><text x="665" y="122" fill="#94a3b8" text-anchor="middle" font-size="12">seated by Ann's browser</text>
-  <rect x="295" y="150" width="170" height="50" rx="10" fill="#151827" stroke="#2e3350"/><text x="380" y="180" fill="#e2e8f0" text-anchor="middle" font-size="14">Cat (watching)</text>
-  <rect x="285" y="8" width="190" height="44" rx="10" fill="#0d0f1a" stroke="#5b515f" stroke-dasharray="5 4"/><text x="380" y="35" fill="#94a3b8" text-anchor="middle" font-size="13">Nostr relays: introductions only</text>
-  <line x1="180" y1="105" x2="580" y2="105" stroke="#70db97" stroke-width="3"/><text x="380" y="98" fill="#70db97" text-anchor="middle" font-size="12">signed moves, directly (WebRTC)</text>
-  <line x1="150" y1="140" x2="295" y2="170" stroke="#70db97" stroke-width="2"/><line x1="610" y1="140" x2="465" y2="170" stroke="#70db97" stroke-width="2"/>
-  <line x1="95" y1="70" x2="285" y2="30" stroke="#5b515f" stroke-dasharray="4 4"/><line x1="665" y1="70" x2="475" y2="30" stroke="#5b515f" stroke-dasharray="4 4"/>
-</svg>
+<figure>
+  <img src="../img/architecture.svg" alt="Three browsers joined directly to each other for signed moves. Dashed lines go up to public relays for introductions, and one to a STUN server.">
+  <figcaption>Solid green: signed moves, offers and chat, encrypted, browser to browser. Dashed blue: encrypted introductions through relays that never see the secret or a move.</figcaption>
+</figure>
 <ol>
   <li><b>Create.</b> Your browser makes a 128-bit room secret and a seat key (ECDSA P-256). The link is <code>https://…/#k=&lt;secret&gt;&amp;s=&lt;your key id&gt;</code>. Everything after <code>#</code> stays in the browser; it is never sent to a server.</li>
   <li><b>Introduce.</b> The relay topic is <code>SHA-256("chess-webCLI/v1/topic" ‖ secret)</code>, and connection offers are encrypted with a key derived from the secret (HKDF). Relays see a topic hash and ciphertext, never the secret or a move.</li>
@@ -69,9 +67,17 @@
   <li><b>Seat.</b> Each newcomer proves it holds its own key. The creator's browser seats the first one in the open colour by writing a signed <code>seat</code> event. Everyone after that watches.</li>
   <li><b>Play.</b> Every move is an event signed by the seat to move, chained to the one before by hash. Every browser in the room replays every event through the rules engine and checks every signature.</li>
 </ol>
+<figure>
+  <img src="../img/invite-link.svg" alt="An invite link split into the part sent to the page server, and the secret, creator key id and optional git repo after the hash sign, which stay in the browser.">
+  <figcaption>Everything after <code>#</code> stays in your browser. The relays only ever see a hash derived from the secret, and the same secret derives the key that encrypts a git-backed game's file.</figcaption>
+</figure>
 
 <h2 id="git">Games kept in a git repo</h2>
 <p>For games that outlast one sitting, from a slow 10 minutes to weeks of correspondence. Tick <i>Keep this game in a git repo</i>, give <code>owner/repo</code> and a token, and the signed log below is committed to one file in that repo, one commit per event. Nobody has to stay online: the opponent claims the open seat whenever they open the link, each player moves when it suits them, and the start screen lists your games and whose move it is.</p>
+<figure>
+  <img src="../img/git-game.svg" alt="Ann commits her signed move to one file in a GitHub repo on Tuesday; Bob's page polls the file, replays and checks it, and commits his reply on Wednesday.">
+  <figcaption>The repo stores and carries the game; it never referees it. Whatever a page loads from it is replayed and signature-checked like a log from a peer.</figcaption>
+</figure>
 <ul>
   <li><b>The repo stores and carries the game; it does not referee it.</b> Whatever a page loads from the repo is replayed and signature-checked like a log from a peer. GitHub, or anyone with write access, can delete or roll back the file, but cannot forge or alter a move.</li>
   <li><b>Encrypted by default</b> with a key derived from the link; commit messages then say only "event 12". Choose <i>Readable</i> for plain moves and messages like "12... Nf6 (Bob)".</li>
@@ -82,6 +88,10 @@
 
 <h2 id="log">The signed log</h2>
 <p>There is no server to say what the position is, so the game is an append-only log that every peer holds and checks. The position is whatever the log replays to.</p>
+<figure>
+  <img src="../img/signed-log.svg" alt="A chain of signed events from init to moves, each pointing at the hash of the one before. A forged move fails its signature check and is refused. Every browser replays the whole log through the rules engine to get the position.">
+  <figcaption>Forged, tampered, reordered, out-of-turn and illegal events all fail the replay, and the console names the first bad event. These checks are what <code>test/log.mjs</code> exercises.</figcaption>
+</figure>
 <pre>init   {color, pub, name, tc}   signed by the creator; its key id must match the link
 seat   {color, pub, name}       signed by the creator
 claim  {color, pub, name}       signed by the claimant (git-backed games only)
@@ -114,6 +124,10 @@ every event: i, prev = hash(previous event), sig</pre>
 
 <h2 id="ai">The bounded AI</h2>
 <p>Following <a href="https://github.com/tejaswigowda/strata-editor">Strata</a>: the deterministic layer does the work, and a model only handles the fuzzy residue.</p>
+<figure>
+  <img src="../img/bounded-ai.svg" alt="Typed words pass through notation, then a fixed grammar, and only the leftovers reach the optional on-device model, which may only pick from a closed list of legal moves, commands and none; everything ends as a proposal you confirm.">
+  <figcaption>Every path ends in a proposal you confirm. The model's output is constrained to a closed list built from the rules engine, and re-checked against it anyway.</figcaption>
+</figure>
 <ol>
   <li><b>Notation</b> (<code>e4</code>, <code>Nxe5</code>, <code>O-O</code>, <code>e7e8q</code>) is played at once.</li>
   <li><b>Plain words</b> go through a fixed grammar (<code>js/intent.js</code>): "knight to f3", "take the queen", "castle long", "kingside knight out", "pawn takes d5". It filters the legal-move list, so its answer is legal by construction. One match is proposed for you to confirm; several are offered as buttons.</li>
@@ -130,6 +144,10 @@ every event: i, prev = hash(previous event), sig</pre>
 <p>The models (Qwen2.5 1.5B and 0.5B Instruct, Llama 3.2 1B Instruct, WebLLM builds) run in your browser through WebGPU. The library (<code>lib/web-llm.js</code>) is self-hosted and hash-pinned; the weights come from Hugging Face and the compiled model library from GitHub, once. <b>None of these models has been evaluated on this task yet</b>, and the model path has not been run on a real GPU in testing; the bounds are tested with scripted fake models.</p>
 
 <h2 id="egress">Privacy and egress</h2>
+<figure>
+  <img src="../img/privacy.svg" alt="Five panels: the people in the room, the introduction relays, the STUN server, the page host and GitHub, each listing what they see, what they do not see, and what they cannot do.">
+  <figcaption>Peer-to-peer has a price: the people in the room can see your IP address, and so can the relays. This is told to you before you first join. Nobody in this picture can forge a move.</figcaption>
+</figure>
 <table>
   <tr><th>Purpose</th><th>Host</th><th>When</th></tr>
   <tr><td>Page, scripts, <code>lib/</code></td><td>the origin you loaded it from</td><td>always</td></tr>

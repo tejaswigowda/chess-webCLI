@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" role="img" aria-labelledby="t d" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+  <title id="t">Typed words go through three layers; only the last is a model</title>
+  <desc id="d">Exact notation plays at once. A fixed grammar filters the legal-move list. Only wording the grammar cannot place goes to the optional on-device model, which may only pick from a closed list, and everything ends as a proposal you confirm.</desc>
+  <defs>
+    <marker id="ba-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/></marker>
+    <marker id="ba-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#58a6ff"/></marker>
+    <marker id="ba-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c4b5fd"/></marker>
+  </defs>
+  <rect width="900" height="420" fill="#0d0f1a"/>
+  <text x="450" y="34" text-anchor="middle" fill="#e6edf3" font-size="18" font-weight="600">Three layers. The model only ever sees the leftovers, and only a closed list</text>
+
+  <rect x="24" y="70" width="190" height="90" rx="12" fill="#1e2236" stroke="#58a6ff" stroke-width="2"/>
+  <text x="119" y="100" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">What you type</text>
+  <text x="119" y="124" text-anchor="middle" fill="#8b949e" font-size="12.5">"e4" · "knight to f3" ·</text>
+  <text x="119" y="142" text-anchor="middle" fill="#8b949e" font-size="12.5">"get my horse to safety"</text>
+
+  <path d="M119 160 C 119 230, 150 250, 240 250" fill="none" stroke="#3fb950" stroke-width="2.5" marker-end="url(#ba-g)"/>
+  <text x="60" y="212" fill="#3fb950" font-size="12.5">exact notation</text>
+  <text x="60" y="228" fill="#3fb950" font-size="12.5">(e4, Nf3, O-O)</text>
+
+  <path d="M214 115 L 270 115" stroke="#58a6ff" stroke-width="2.5" marker-end="url(#ba-b)"/>
+  <rect x="274" y="70" width="230" height="110" rx="12" fill="#151827" stroke="#58a6ff" stroke-width="2"/>
+  <text x="389" y="98" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">1 · Fixed grammar</text>
+  <text x="389" y="120" text-anchor="middle" fill="#8b949e" font-size="12.5">deterministic, no model (intent.js)</text>
+  <text x="389" y="138" text-anchor="middle" fill="#8b949e" font-size="12.5">filters the legal-move list, so its</text>
+  <text x="389" y="156" text-anchor="middle" fill="#8b949e" font-size="12.5">answer is legal by construction</text>
+
+  <path d="M389 180 C 389 220, 389 234, 389 240" fill="none" stroke="#3fb950" stroke-width="2.5" marker-end="url(#ba-g)"/>
+  <text x="404" y="214" fill="#3fb950" font-size="12.5">one or more legal moves</text>
+
+  <path d="M504 115 L 560 115" stroke="#c4b5fd" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#ba-p)"/>
+  <text x="532" y="103" text-anchor="middle" fill="#c4b5fd" font-size="12">only the</text>
+  <text x="532" y="138" text-anchor="middle" fill="#c4b5fd" font-size="12">leftovers</text>
+  <rect x="564" y="56" width="312" height="140" rx="12" fill="#151827" stroke="#c4b5fd" stroke-width="2"/>
+  <text x="720" y="84" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">2 · Bounded model — optional, on-device</text>
+  <text x="720" y="106" text-anchor="middle" fill="#8b949e" font-size="12.5">sees the position and a closed list:</text>
+  <text x="720" y="124" text-anchor="middle" fill="#c4b5fd" font-size="12.5" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">[Nf3, Nh3, …, /flip, none]</text>
+  <text x="720" y="144" text-anchor="middle" fill="#8b949e" font-size="12.5">decoding constrained to that list · reply re-checked</text>
+  <text x="720" y="162" text-anchor="middle" fill="#8b949e" font-size="12.5">against it · move re-checked by the rules engine</text>
+  <text x="720" y="180" text-anchor="middle" fill="#8b949e" font-size="12.5">≤ 3 attempts · 40 tokens · temperature 0</text>
+
+  <path d="M720 196 C 720 226, 650 240, 560 246" fill="none" stroke="#3fb950" stroke-width="2.5" marker-end="url(#ba-g)"/>
+
+  <rect x="240" y="244" width="320" height="64" rx="12" fill="#1e2236" stroke="#3fb950" stroke-width="2"/>
+  <text x="400" y="270" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">A proposal: "Play Nf3?"</text>
+  <text x="400" y="292" text-anchor="middle" fill="#8b949e" font-size="12.5">nothing is played until you press the button</text>
+
+  <path d="M400 308 L 400 340" stroke="#3fb950" stroke-width="2.5" marker-end="url(#ba-g)"/>
+  <rect x="300" y="344" width="200" height="44" rx="10" fill="#151827" stroke="#3fb950"/>
+  <text x="400" y="372" text-anchor="middle" fill="#3fb950" font-size="15" font-weight="600">You confirm. It moves.</text>
+
+  <text x="604" y="250" fill="#8b949e" font-size="12.5">The model never plays, chats, resigns or</text>
+  <text x="604" y="268" fill="#8b949e" font-size="12.5">offers anything by itself. It is never shown</text>
+  <text x="604" y="286" fill="#8b949e" font-size="12.5">an evaluation and never asked which</text>
+  <text x="604" y="304" fill="#8b949e" font-size="12.5">move is good — it only translates.</text>
+  <text x="604" y="330" fill="#8b949e" font-size="12.5">No model has been evaluated on this</text>
+  <text x="604" y="348" fill="#8b949e" font-size="12.5">task yet; the bounds are what is tested.</text>
+</svg>

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 380" role="img" aria-labelledby="t d" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+  <title id="t">The game is a signed, hash-chained event log</title>
+  <desc id="d">A chain of signed events from init to moves. Each points at the hash of the one before. A forged move fails its signature check and is refused. Every browser replays the whole log through the rules engine to get the position.</desc>
+  <defs>
+    <marker id="sl-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/></marker>
+    <marker id="sl-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f85149"/></marker>
+    <marker id="sl-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/></marker>
+  </defs>
+  <rect width="900" height="380" fill="#0d0f1a"/>
+  <text x="450" y="34" text-anchor="middle" fill="#e6edf3" font-size="18" font-weight="600">There is no server to ask: the game is a log everyone holds and checks</text>
+
+  <g font-size="14" text-anchor="middle">
+    <rect x="24" y="64" width="140" height="70" rx="10" fill="#151827" stroke="#3a3f5c"/>
+    <text x="94" y="90" fill="#e6edf3" font-weight="600">init</text>
+    <text x="94" y="110" fill="#8b949e" font-size="12">Ann takes White</text>
+    <text x="94" y="126" fill="#3fb950" font-size="12">✓ signed by Ann</text>
+
+    <rect x="202" y="64" width="140" height="70" rx="10" fill="#151827" stroke="#3a3f5c"/>
+    <text x="272" y="90" fill="#e6edf3" font-weight="600">seat</text>
+    <text x="272" y="110" fill="#8b949e" font-size="12">Bob takes Black</text>
+    <text x="272" y="126" fill="#3fb950" font-size="12">✓ signed by Ann</text>
+
+    <rect x="380" y="64" width="140" height="70" rx="10" fill="#151827" stroke="#3a3f5c"/>
+    <text x="450" y="90" fill="#e6edf3" font-weight="600">move e4</text>
+    <text x="450" y="110" fill="#8b949e" font-size="12">legal for White</text>
+    <text x="450" y="126" fill="#3fb950" font-size="12">✓ signed by Ann</text>
+
+    <rect x="558" y="64" width="140" height="70" rx="10" fill="#151827" stroke="#3a3f5c"/>
+    <text x="628" y="90" fill="#e6edf3" font-weight="600">move e5</text>
+    <text x="628" y="110" fill="#8b949e" font-size="12">legal for Black</text>
+    <text x="628" y="126" fill="#3fb950" font-size="12">✓ signed by Bob</text>
+
+    <rect x="736" y="64" width="140" height="70" rx="10" fill="#151827" stroke="#3a3f5c"/>
+    <text x="806" y="90" fill="#e6edf3" font-weight="600">move Nf3</text>
+    <text x="806" y="110" fill="#8b949e" font-size="12">legal for White</text>
+    <text x="806" y="126" fill="#3fb950" font-size="12">✓ signed by Ann</text>
+  </g>
+
+  <g stroke="#8b949e" stroke-width="2">
+    <path d="M202 99 L 168 99" marker-end="url(#sl-a)"/>
+    <path d="M380 99 L 346 99" marker-end="url(#sl-a)"/>
+    <path d="M558 99 L 524 99" marker-end="url(#sl-a)"/>
+    <path d="M736 99 L 702 99" marker-end="url(#sl-a)"/>
+  </g>
+  <text x="94" y="158" fill="#8b949e" font-size="12">each event points at the hash of the one before (prev), and carries its writer's signature</text>
+
+  <rect x="80" y="186" width="250" height="58" rx="10" fill="#1b1114" stroke="#f85149"/>
+  <text x="205" y="210" text-anchor="middle" fill="#f85149" font-size="14" font-weight="600">move Qxf7 "from Bob"</text>
+  <text x="205" y="230" text-anchor="middle" fill="#f85149" font-size="12.5">signature does not verify → refused</text>
+  <path d="M260 186 C 300 160, 330 130, 350 112" fill="none" stroke="#f85149" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#sl-r)"/>
+  <text x="205" y="262" text-anchor="middle" fill="#8b949e" font-size="12">a tampered, reordered or out-of-turn event fails the same way,</text>
+  <text x="205" y="278" text-anchor="middle" fill="#8b949e" font-size="12">and the console names the first bad event</text>
+
+  <path d="M628 140 L 628 186" stroke="#3fb950" stroke-width="2.5" marker-end="url(#sl-g)"/>
+  <rect x="430" y="190" width="396" height="54" rx="10" fill="#151827" stroke="#3fb950"/>
+  <text x="628" y="213" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="600">every browser replays the whole log through the rules engine</text>
+  <text x="628" y="232" text-anchor="middle" fill="#8b949e" font-size="12.5">signatures, chaining, turn order and legality, event by event</text>
+  <path d="M628 244 L 628 290" stroke="#3fb950" stroke-width="2.5" marker-end="url(#sl-g)"/>
+  <rect x="508" y="294" width="240" height="46" rx="10" fill="#1e2236" stroke="#3fb950" stroke-width="2"/>
+  <text x="628" y="322" text-anchor="middle" fill="#3fb950" font-size="15" font-weight="600">the position on your screen</text>
+</svg>

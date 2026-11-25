@@ -14,6 +14,7 @@ const CACHE_NAME = `chess-webCLI-${CACHE_VERSION}`;
 const SHELL = [
   './', 'index.html', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-192-maskable.png', 'icon-512-maskable.png', 'apple-touch-icon.png',
   'about/', 'about/index.html',
+  'img/architecture.svg', 'img/invite-link.svg', 'img/signed-log.svg', 'img/git-game.svg', 'img/bounded-ai.svg', 'img/privacy.svg',
   'js/app.js', 'js/chess.js', 'js/engine.js', 'js/engine-worker.js', 'js/intent.js', 'js/ai.js', 'js/log.js', 'js/store.js',
   'lib/trystero-nostr.js', 'lib/qrcode.js', 'lib/PINS.json',
 ];

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 340" role="img" aria-labelledby="t d" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+  <title id="t">Anatomy of an invite link</title>
+  <desc id="d">The part before the hash goes to the page server. The secret, the creator key id and the optional git repo after the hash never leave the browser.</desc>
+  <rect width="900" height="340" fill="#0d0f1a"/>
+  <text x="450" y="36" text-anchor="middle" fill="#e6edf3" font-size="18" font-weight="600">One link is the whole room</text>
+
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17">
+    <rect x="22" y="58" width="856" height="50" rx="10" fill="#151827" stroke="#3a3f5c"/>
+    <text x="38" y="90" fill="#58a6ff">https://chess.webcli.app/</text>
+    <text x="295" y="90" fill="#8b949e">#</text>
+    <text x="308" y="90" fill="#d29922">k=3Fh9aX0c1QmPz7TwB2eLsg</text>
+    <text x="558" y="90" fill="#8b949e">&amp;</text>
+    <text x="571" y="90" fill="#3fb950">s=Kq2vXw9…</text>
+    <text x="684" y="90" fill="#8b949e">&amp;</text>
+    <text x="697" y="90" fill="#a371f7">g=ann/games</text>
+  </g>
+
+  <path d="M38 116 L 38 132 L 288 132 L 288 116" fill="none" stroke="#58a6ff" stroke-width="2"/>
+  <text x="163" y="154" text-anchor="middle" fill="#58a6ff" font-size="14" font-weight="600">sent to the page server</text>
+  <text x="163" y="172" text-anchor="middle" fill="#8b949e" font-size="13">(just "give me the app")</text>
+
+  <path d="M300 116 L 300 132 L 862 132 L 862 116" fill="none" stroke="#8b949e" stroke-width="2"/>
+  <text x="581" y="154" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="600">never sent anywhere: browsers keep everything after # local</text>
+
+  <rect x="36" y="196" width="310" height="116" rx="10" fill="#151827" stroke="#d29922"/>
+  <text x="191" y="222" text-anchor="middle" fill="#d29922" font-size="14" font-weight="600">k = 128-bit room secret</text>
+  <text x="191" y="244" text-anchor="middle" fill="#8b949e" font-size="12.5">SHA-256 of it = the room topic relays see</text>
+  <text x="191" y="262" text-anchor="middle" fill="#8b949e" font-size="12.5">HKDF of it = the connection password,</text>
+  <text x="191" y="280" text-anchor="middle" fill="#8b949e" font-size="12.5">and the key that encrypts a git game file</text>
+  <text x="191" y="298" text-anchor="middle" fill="#8b949e" font-size="12.5">a new room is a new secret</text>
+
+  <rect x="366" y="196" width="240" height="116" rx="10" fill="#151827" stroke="#3fb950"/>
+  <text x="486" y="222" text-anchor="middle" fill="#3fb950" font-size="14" font-weight="600">s = creator key id</text>
+  <text x="486" y="244" text-anchor="middle" fill="#8b949e" font-size="12.5">every browser checks that the</text>
+  <text x="486" y="262" text-anchor="middle" fill="#8b949e" font-size="12.5">game really was started by the</text>
+  <text x="486" y="280" text-anchor="middle" fill="#8b949e" font-size="12.5">key this link names</text>
+
+  <rect x="626" y="196" width="238" height="116" rx="10" fill="#151827" stroke="#a371f7"/>
+  <text x="745" y="222" text-anchor="middle" fill="#a371f7" font-size="14" font-weight="600">g = git repo (optional)</text>
+  <text x="745" y="244" text-anchor="middle" fill="#8b949e" font-size="12.5">where a long-running game's</text>
+  <text x="745" y="262" text-anchor="middle" fill="#8b949e" font-size="12.5">signed log is kept, one commit</text>
+  <text x="745" y="280" text-anchor="middle" fill="#8b949e" font-size="12.5">per event</text>
+</svg>
