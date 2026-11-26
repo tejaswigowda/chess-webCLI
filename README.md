@@ -115,6 +115,17 @@ Ann moves  ──commit──►            one file, one commit per event      
 
 On this device: **Play the computer**, **Pass and play** or **Analysis board** on the start screen. Nothing is sent.
 
+### URL analysis
+
+The read-only URL-run interface loads a PGN or FEN into the local analysis board and returns the resulting PGN or FEN as `window.__webcli_result`:
+
+```text
+https://chess.webcli.app/#run=analyze&pgn=1.%20e4%20e5%20*
+https://chess.webcli.app/#run=analyze&fen=rnbqkbnr%2Fpppppppp%2F8%2F8%2F8%2F8%2FPPPPPPPP%2FRNBQKBNR%20w%20KQkq%20-%200%201&format=FEN&download=1
+```
+
+Exactly one of `pgn=` or `fen=` is required. `format=` is `PGN` (default) or `FEN`; `download=1` saves the artifact. This path does not create a room or contact relays.
+
 ---
 
 ## Privacy & Egress

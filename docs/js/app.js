@@ -16,6 +16,7 @@ import { LEVELS, formatScore } from './engine.js';
 import { BoundedAI, MODELS, MODEL_HOSTS, MAX_ATTEMPTS } from './ai.js';
 import { PROTO, b64u, replay, nextEvent, signEvent, newSeatKey, importSeatKey, keyIdOf, choose, pgnOf, eventHash } from './log.js';
 import { GitStore, StoreError, defaultPath, REPO_RE, PATH_RE, BRANCH_RE } from './store.js';
+import { parseRunParams, makeTextArtifact } from './webcli.js';
 
 const VERSION = '0.2.0';
 const APP_ID = 'chess-webCLI';
@@ -1649,7 +1650,7 @@ function initLanding() {
   $('#setLan').checked = !!settings.lan; $('#setStun').value = settings.stun || DEFAULT_STUN; $('#setRelays').value = settings.relays || '';
   const inv = parseInvite();
   renderGames();
-  refreshGames();
+  if (!isUrlRun()) refreshGames();
   // git options: free to fill when creating; fixed by the link when joining a git-backed game
   const g = inv?.git;
   $('#gitSection').classList.toggle('hidden', !!inv && !g);
@@ -1669,7 +1670,10 @@ function initLanding() {
   $('#btnCreate').classList.toggle('primary', !inv);
   $('#btnCreate').textContent = inv ? 'Create a new room instead' : 'Create a room';
   $('#offlineNote').classList.toggle('hidden', navigator.onLine);
-  if (location.hash && !inv) showFatal('This invite link is incomplete or damaged. It should end in #k=…&s=… with 22 characters each.');
+  if (location.hash && !inv && !new URLSearchParams(location.hash.slice(1)).has('run')) showFatal('This invite link is incomplete or damaged. It should end in #k=…&s=… with 22 characters each.');
+}
+function isUrlRun() {
+  return new URLSearchParams(location.search).has('run') || new URLSearchParams(location.hash.slice(1)).has('run');
 }
 addEventListener('online', () => $('#offlineNote').classList.add('hidden'));
 addEventListener('offline', () => $('#offlineNote').classList.remove('hidden'));
@@ -1689,7 +1693,68 @@ if ('serviceWorker' in navigator && window.isSecureContext && !new URLSearchPara
 applyBoardTheme(settings.board);
 updateMuteBtn();
 initLanding();
+async function runFromUrl() {
+  let params;
+  try {
+    params = parseRunParams(location.search, location.hash);
+    if (!params) return false;
+    document.body.dataset.webcliStatus = 'loading';
+
+    let startFen = null;
+    let moves = [];
+    if (params.pgn !== null) {
+      const parsed = Chess.parsePgn(params.pgn);
+      if (!parsed.ok) throw new Error(parsed.error || 'Invalid PGN.');
+      startFen = parsed.headers.FEN || null;
+      moves = parsed.game.history().map((move) => move.uci);
+    } else if (params.fen !== null) {
+      const error = Chess.validateFen(params.fen);
+      if (error) throw new Error(error);
+      startFen = params.fen;
+    } else {
+      throw new Error('run=analyze requires pgn or fen.');
+    }
+
+    document.body.dataset.webcliStatus = 'running';
+    await startLocal('analysis', { fen: startFen });
+    if (!S.st || S.mode !== 'analysis') throw new Error('Could not start the analysis board.');
+    for (const uci of moves) {
+      if (!(await commit({ t: 'move', by: game().turn, uci }))) throw new Error('Could not replay the supplied PGN.');
+    }
+
+    const text = params.format === 'FEN' ? game().fen() : pgnOf(S.st);
+    const name = params.format === 'FEN' ? 'position.fen' : 'game.pgn';
+    window.__webcli_result = {
+      ok: true,
+      op: 'analyze',
+      artifact: makeTextArtifact(text, name, params.format === 'FEN' ? 'text/plain' : 'application/x-chess-pgn'),
+      error: null,
+      meta: { tool: 'chess', fen: game().fen(), ply: game().ply(), format: params.format },
+    };
+    document.body.dataset.webcliStatus = 'done';
+    if (params.download) {
+      const url = URL.createObjectURL(new Blob([text], { type: params.format === 'FEN' ? 'text/plain' : 'application/x-chess-pgn' }));
+      const link = el('a', { href: url, download: name });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    return true;
+  } catch (error) {
+    const message = error.message || String(error);
+    window.__webcli_result = { ok: false, op: params?.run || null, artifact: null, error: message, meta: { tool: 'chess' } };
+    document.body.dataset.webcliStatus = 'error';
+    showFatal(message);
+    return true;
+  }
+}
+window.__webcli_result = null;
 (async () => {
+  if (isUrlRun()) {
+    await runFromUrl();
+    return;
+  }
   const inv = parseInvite();
   if (inv) {
     const { roomId } = await deriveRoom(inv.secret);

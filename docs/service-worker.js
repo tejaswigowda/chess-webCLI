@@ -9,13 +9,13 @@
  * Network first, cache as the fallback, so online you always get one consistent release (the page checks
  * the libraries in lib/ against hashes pinned in js/app.js, and the two must come from the same release).
  */
-const CACHE_VERSION = '0.2.0';
+const CACHE_VERSION = '0.2.1';
 const CACHE_NAME = `chess-webCLI-${CACHE_VERSION}`;
 const SHELL = [
   './', 'index.html', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-192-maskable.png', 'icon-512-maskable.png', 'apple-touch-icon.png',
   'about/', 'about/index.html',
   'img/architecture.svg', 'img/invite-link.svg', 'img/signed-log.svg', 'img/git-game.svg', 'img/bounded-ai.svg', 'img/privacy.svg',
-  'js/app.js', 'js/chess.js', 'js/engine.js', 'js/engine-worker.js', 'js/intent.js', 'js/ai.js', 'js/log.js', 'js/store.js',
+  'js/app.js', 'js/chess.js', 'js/engine.js', 'js/engine-worker.js', 'js/intent.js', 'js/ai.js', 'js/log.js', 'js/store.js', 'js/webcli.js',
   'lib/trystero-nostr.js', 'lib/qrcode.js', 'lib/PINS.json',
 ];
 self.addEventListener('install', (event) => {

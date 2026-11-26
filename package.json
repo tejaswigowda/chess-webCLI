@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node server.js",
     "vendor": "node scripts/vendor.mjs",
-    "test": "node test/rules.mjs && node test/engine.mjs && node test/ai-bounds.mjs && node test/log.mjs && node test/log-async.mjs && node test/store.mjs && node test/e2e.mjs && node test/e2e-git.mjs",
+    "test": "node test/rules.mjs && node test/engine.mjs && node test/ai-bounds.mjs && node test/log.mjs && node test/log-async.mjs && node test/store.mjs && node test/webcli.mjs && node test/e2e.mjs && node test/e2e-git.mjs",
     "screens": "node test/screens.mjs",
     "test:rules": "node test/rules.mjs"
   },
