@@ -8,7 +8,7 @@ Chess rooms you open with a link, played directly between browsers. **Link in, g
 
 **Read more: [the About page](docs/about/index.html)** (served at `/about/`).
 
-**Status: v0.2.0 (protocol 1). Not yet run on real devices across real networks, or against the real GitHub API.** `npm test` runs 237 checks: the rules engine (perft against published counts), the engine, the move grammar, the model bounds (with scripted fake models), the signed log, the git store, real Chrome pages playing each other over WebRTC through a mock relay, and real Chrome pages playing a multi-day game through a mock GitHub API with peer-to-peer switched off. The model path has **not** been run on a real GPU, and **no model has been evaluated on this task yet**.
+**Status: v0.2.0 (protocol 1). Live network testing has passed between real Chrome peers through the public relays and STUN; phone-to-laptop testing across different networks remains open.** `npm test` runs 237 checks: the rules engine (perft against published counts), the engine, the move grammar, the model bounds (with scripted fake models), the signed log, the git store, real Chrome pages playing each other over WebRTC through a mock relay, and real Chrome pages playing a multi-day game through a mock GitHub API with peer-to-peer switched off. Browser CORS and public read access to the real GitHub API have passed; authenticated writes, ETags and token scopes remain untested. The model path has **not** been run on a real GPU, and **no model has been evaluated on this task yet**.
 
 ---
 
@@ -198,8 +198,9 @@ test/                    rules, engine, ai-bounds, log, log-async, store, e2e, e
 | Privacy | secret absent from relay frames and page requests; no move in relay frames; no non-origin fetch | automated |
 | On-device | engine game, takeback, hint, reload restore, PGN load; only the page origin contacted | automated |
 | Model on a real GPU | load, latency, accuracy on a phrase set | **open** |
-| Real devices, real relays, real networks | phone ↔ laptop, different networks | **open** |
-| The real GitHub API | CORS, ETags, token scopes, rate limits | **open** |
+| Public relays and STUN | two real Chrome peers connected and exchanged a move | **live test passed** |
+| Real devices across real networks | phone ↔ laptop, different networks | **open** |
+| The real GitHub API | public read and browser CORS passed; ETags, authenticated writes and token scopes remain open | **partially tested** |
 
 ---
 

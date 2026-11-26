@@ -166,12 +166,12 @@ every event: i, prev = hash(previous event), sig</pre>
 <ul>
   <li><b>No server means no referee.</b> There is no rating, no matchmaking, no adjudication and no anti-cheat. It is for playing people you know.</li>
   <li><b>A live room's game lives as long as its players.</b> If a player closes their tab, their seat key is gone and that game cannot be finished. A reload is fine. Keep the game in a git repo if it should outlive a tab.</li>
-  <li><b>GitHub only for now</b>, and not yet tested against the real API (the tests use a stand-in).</li>
+  <li><b>GitHub only for now</b>. Public read access and browser CORS to the real API have passed; authenticated writes, ETags and token scopes remain untested.</li>
   <li><b>Networks that keep devices apart</b> (some guest, venue and corporate networks) stop peer-to-peer connections, and there is no relay server to fall back on.</li>
   <li><b>Clocks are trusted</b>, within the cap described above.</li>
   <li><b>The engine is modest</b>: a few hundred thousand positions per move, no book. Good for practice, not for analysis of master games.</li>
   <li><b>Pieces are Unicode glyphs</b>, so their look depends on your fonts.</li>
-  <li><b>Not yet run on real devices across real networks.</b> The room tests use real Chrome pages and real WebRTC, with a mock relay.</li>
+  <li><b>Public relays and STUN have passed live testing.</b> Two real Chrome peers connected through the public relays and exchanged a move; phone-to-laptop testing across different networks remains open.</li>
 </ul>
 
 <h2 id="console">Console</h2>
